@@ -14,7 +14,6 @@ export default function Groups({ me }: { me: string }) {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [currency, setCurrency] = useState('JPY')
-  const [memberInput, setMemberInput] = useState('')
 
   async function refresh() {
     setError(null)
@@ -28,11 +27,10 @@ export default function Groups({ me }: { me: string }) {
     setCreating(true)
     setError(null)
     try {
-      const members = memberInput
-        .split(/[\s,]+/)
-        .map(s => s.trim())
-        .filter(Boolean)
-      const handle = await createLedger({ name: name.trim(), currency, owner: me, members })
+      // Owner is the only initial member. Everyone else joins by scanning
+      // the share QR — see Group page's join CTA. createLedger guarantees
+      // owner is in members[].
+      const handle = await createLedger({ name: name.trim(), currency, owner: me, members: [] })
       window.location.hash = `#/g/${handle.gistId}`
     } catch (err: any) {
       setError(err?.message || 'Failed to create group')
@@ -73,7 +71,8 @@ export default function Groups({ me }: { me: string }) {
       <div className="card">
         <h2 className="section-title lg" style={{ marginBottom: 4 }}>New group</h2>
         <p className="subtle muted" style={{ marginTop: 0, marginBottom: 16 }}>
-          Creates a secret gist in your account. You ({me}) are added automatically.
+          You start as the only member. Share the group's QR — anyone who scans
+          it and signs in can join themselves.
         </p>
         <form onSubmit={handleCreate} className="form-stack">
           <div className="row">
@@ -91,11 +90,6 @@ export default function Groups({ me }: { me: string }) {
               <option>GBP</option>
             </select>
           </div>
-          <input
-            placeholder="Other members' GitHub logins (space or comma separated)"
-            value={memberInput}
-            onChange={e => setMemberInput(e.target.value)}
-          />
           <div>
             <button type="submit" disabled={creating || !name.trim()}>
               {creating ? 'Creating…' : 'Create group'}

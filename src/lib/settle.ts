@@ -2,26 +2,31 @@
 // Stateless, no I/O, easy to unit test (and to re-run client-side every
 // render — the input set is small).
 
-import type { Balance, Event, ExpenseEvent, Ledger, Member, Transfer } from '../types'
+import type { Balance, Event, ExpenseEvent, Member, Transfer } from '../types'
 
 // Walk the event log and return per-member running balance. Members
 // missing from the events list still appear (with zero) so the UI can
-// render the full roster.
+// render the full roster — including people who joined via QR scan
+// after the gist's stored members[] was last updated.
+//
+// Members are passed in explicitly (rather than read from a Ledger) so
+// the caller can union ledger.members with join-comment authors and get
+// the right roster without our help.
 //
 // Convention: positive balance = the group OWES this member (they paid
 // more than their share). Negative = this member OWES the group.
-export function computeBalances(ledger: Ledger): Balance[] {
+export function computeBalances(events: Event[], members: Member[]): Balance[] {
   const balances = new Map<Member, number>()
-  for (const m of ledger.members) balances.set(m, 0)
+  for (const m of members) balances.set(m, 0)
 
-  const voided = collectVoided(ledger.events)
+  const voided = collectVoided(events)
 
-  for (const e of ledger.events) {
+  for (const e of events) {
     if (e.type !== 'expense') continue
     if (voided.has(e.id)) continue
     applyExpense(balances, e)
   }
-  return ledger.members.map(m => ({ member: m, balance: balances.get(m) ?? 0 }))
+  return members.map(m => ({ member: m, balance: balances.get(m) ?? 0 }))
 }
 
 function collectVoided(events: Event[]): Set<string> {

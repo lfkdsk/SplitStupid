@@ -8,13 +8,20 @@ import {
   readLedger,
   type LedgerHandle,
 } from '../lib/gist'
+import {
+  listGroupComments,
+  postJoinComment,
+  type GroupComments,
+} from '../lib/comments'
 import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settle'
 import { avatarUrl } from '../lib/avatar'
 
 export default function Group({ gistId, me }: { gistId: string; me: string }) {
   const [handle, setHandle] = useState<LedgerHandle | null>(null)
+  const [comments, setComments] = useState<GroupComments | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [joining, setJoining] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -27,25 +34,44 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
   async function refresh() {
     setError(null)
     try {
-      const h = await readLedger(gistId)
+      // Ledger and comments are independent reads — fire in parallel.
+      const [h, c] = await Promise.all([
+        readLedger(gistId),
+        listGroupComments(gistId).catch(() => ({ events: [], joins: [] }) as GroupComments),
+      ])
       if (!h) { setError('Ledger not found or not a SplitStupid gist.'); return }
       setHandle(h)
-      setParticipants(prev => prev.length ? prev : h.ledger.members)
-      if (!h.ledger.members.includes(payer)) setPayer(h.ledger.owner)
+      setComments(c)
     } catch (e: any) {
       setError(e?.message || 'Failed to read ledger')
     }
   }
   useEffect(() => { refresh() }, [gistId])
 
+  // Roster = gist owner ∪ stored members[] ∪ join-comment authors.
+  // Computed fresh each render so a fresh join is reflected immediately
+  // after the comment posts.
+  const effectiveMembers = useMemo(() => {
+    if (!handle) return []
+    const set = new Set<string>([handle.ledger.owner, ...handle.ledger.members])
+    if (comments) for (const j of comments.joins) set.add(j.author)
+    return Array.from(set)
+  }, [handle, comments])
+
+  // Once the roster is known, lazily seed the add-expense form. We avoid
+  // overwriting the user's in-progress edits — if `participants` is
+  // already populated, leave it alone.
+  useEffect(() => {
+    if (effectiveMembers.length === 0) return
+    setParticipants(prev => prev.length ? prev : effectiveMembers)
+    setPayer(prev => effectiveMembers.includes(prev) ? prev : (handle?.ledger.owner ?? prev))
+  }, [effectiveMembers, handle])
+
   const balances = useMemo(
-    () => handle ? computeBalances(handle.ledger) : [],
-    [handle],
+    () => handle ? computeBalances(handle.ledger.events, effectiveMembers) : [],
+    [handle, effectiveMembers],
   )
   const transfers = useMemo(() => settle(balances), [balances])
-  // Bar widths are scaled to the largest balance, so the UI shows
-  // *relative* magnitude — visually identifying who's the biggest
-  // debtor / creditor at a glance even when amounts differ wildly.
   const maxBalance = useMemo(
     () => balances.reduce((m, b) => Math.max(m, Math.abs(b.balance)), 0),
     [balances],
@@ -62,10 +88,27 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
 
   const ledger = handle.ledger
   const isOwner = ledger.owner === me
+  const isMember = effectiveMembers.includes(me)
   const voided = new Set(
     ledger.events.filter(e => e.type === 'void').map(e => (e as any).targetId),
   )
   const shareUrl = `${window.location.origin}/#/g/${gistId}`
+
+  async function handleJoin() {
+    setJoining(true)
+    setError(null)
+    try {
+      await postJoinComment(gistId)
+      // Refresh just the comments (ledger didn't change) — the joiner
+      // appears in effectiveMembers as soon as setComments lands.
+      const c = await listGroupComments(gistId)
+      setComments(c)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to join group')
+    } finally {
+      setJoining(false)
+    }
+  }
 
   async function addExpense(e: React.FormEvent) {
     e.preventDefault()
@@ -138,8 +181,6 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1600)
     } catch {
-      // Browser blocked clipboard — fall back to selecting the text so
-      // the user can manually copy.
       window.prompt('Copy this URL:', shareUrl)
     }
   }
@@ -159,9 +200,11 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
           <span>{ledger.currency}</span>
           <span className="dot" />
           <span>owner <strong>{ledger.owner}</strong></span>
+          <span className="dot" />
+          <span>{effectiveMembers.length} member{effectiveMembers.length === 1 ? '' : 's'}</span>
         </div>
         <div className="chip-row" style={{ marginBottom: 14 }}>
-          {ledger.members.map(m => (
+          {effectiveMembers.map(m => (
             <span key={m} className="member-chip">
               <img src={avatarUrl(m, 36)} alt="" />
               {m}
@@ -175,7 +218,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
             style={{ flex: '0 0 auto' }}
             onClick={() => setShareOpen(o => !o)}
           >
-            <ShareIcon /> {shareOpen ? 'Hide share' : 'Share'}
+            <ShareIcon /> {shareOpen ? 'Hide share' : 'Share to invite'}
           </button>
           <a
             href={handle.htmlUrl}
@@ -190,7 +233,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
 
       {shareOpen && (
         <div className="card share-panel">
-          <p className="section-title" style={{ margin: 0 }}>Scan to open</p>
+          <p className="section-title" style={{ margin: 0 }}>Scan or share to invite</p>
           <div className="qr-frame">
             <QRCodeSVG
               value={shareUrl}
@@ -204,6 +247,22 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
           <button type="button" className="secondary" onClick={copyShareUrl}>
             {copied ? 'Copied ✓' : 'Copy link'}
           </button>
+          <p className="subtle muted" style={{ textAlign: 'center', maxWidth: 280, margin: 0 }}>
+            Anyone who scans, signs in with GitHub, and taps <em>Join</em> is added to the roster.
+          </p>
+        </div>
+      )}
+
+      {!isMember && (
+        <div className="card join-cta">
+          <h3 className="section-title lg" style={{ marginBottom: 6 }}>Join this group</h3>
+          <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
+            You're viewing as a guest. Joining adds you to the roster as <strong>{me}</strong>,
+            so you'll be included when expenses are split.
+          </p>
+          <button onClick={handleJoin} disabled={joining}>
+            {joining ? 'Joining…' : `Join as ${me}`}
+          </button>
         </div>
       )}
 
@@ -215,7 +274,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
           <form onSubmit={addExpense} className="form-stack">
             <div className="row">
               <select value={payer} onChange={e => setPayer(e.target.value)}>
-                {ledger.members.map(m => (
+                {effectiveMembers.map(m => (
                   <option key={m} value={m}>{m} paid</option>
                 ))}
               </select>
@@ -235,7 +294,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
             <div>
               <span className="field-label">Split equally among</span>
               <div className="chip-row">
-                {ledger.members.map(m => (
+                {effectiveMembers.map(m => (
                   <label key={m} className="check-pill">
                     <input
                       type="checkbox"

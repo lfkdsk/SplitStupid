@@ -851,3 +851,13 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   max-width: 320px;
   letter-spacing: 0.01em;
 }
+
+/* Join CTA — non-members get a subtly accented card so the "you can
+   join this" message is impossible to miss without screaming. */
+.join-cta {
+  border-left: 3px solid var(--accent);
+  padding-left: 21px;
+}
+.join-cta .section-title.lg {
+  color: var(--accent);
+}
