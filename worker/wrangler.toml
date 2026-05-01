@@ -1,0 +1,21 @@
+# Cloudflare Worker config for splitstupid-data — the SplitStupid backend.
+# Sibling Worker to lfkdsk-auth in the same CF account, on the same free
+# plan. Custom domain api.splitstupid.lfkdsk.org is set up via the CF
+# dashboard (Workers → this worker → Settings → Triggers → Routes).
+
+name = "splitstupid-data"
+main = "src/index.ts"
+compatibility_date = "2025-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "splitstupid"
+# Paste the database_id you got from `npx wrangler d1 create splitstupid`
+# here. The init shows it once on creation.
+database_id = "REPLACE_WITH_D1_ID_AFTER_wrangler_d1_create"
+
+[vars]
+# Origins allowed to talk to this Worker. Worker echoes the request's
+# Origin if it matches one of these, otherwise CORS rejects.
+ALLOWED_ORIGINS = "https://splitstupid.lfkdsk.org,http://localhost:5180"

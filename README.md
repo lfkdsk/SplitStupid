@@ -1,123 +1,155 @@
 # SplitStupid
 
-A Splitwise-shaped expense ledger that lives in a GitHub Gist. No
-backend, no database — every group is one public gist owned by the
-group's organiser, members are just GitHub logins, and the URL is the
-share link.
+A Splitwise-shaped expense ledger for friend groups, gated on GitHub
+sign-in. Owners create groups, share a QR code, anyone who scans + signs
+in joins themselves and starts logging shared expenses; settlement runs
+the classic min-cashflow greedy client-side.
+
+## Repo layout
+
+This is a monorepo. Frontend lives at the root, backend Worker in
+`worker/`:
+
+```
+SplitStupid/
+├── src/                  ← React + Vite frontend (splitstupid.lfkdsk.org)
+├── public/CNAME
+├── .github/workflows/    ← GH Pages deploy on push to master
+├── package.json          ← frontend deps
+└── worker/               ← Cloudflare Worker + D1 (api.splitstupid.lfkdsk.org)
+    ├── src/index.ts
+    ├── migrations/0001_init.sql
+    ├── wrangler.toml
+    └── README.md         ← deploy steps, route table, schema notes
+```
+
+The two halves are versioned together — a commit that adds an API route
+also adds the UI that uses it. CF Workers Builds (configured to a
+`worker/` root directory) and GH Pages run in parallel on each push to
+`master`.
 
 ## How it works
 
 ```
-   ┌──────────────────────┐
-   │ splitstupid.lfkdsk.. │
-   └──────────────────────┘
-              │
-              ▼ Sign in with GitHub
-       auth.lfkdsk.org/splitstupid/callback        ← lfkdsk-auth Worker
-              │
-              ▼ #oauth_token=…
-       splitstupid.lfkdsk.org
-              │
-              ▼ user's token (gist scope)
-        api.github.com/gists/…                     ← one gist per group
+                         splitstupid.lfkdsk.org   (GH Pages, this repo's root)
+                                  │
+              ┌───────────────────┼─────────────────────┐
+              ▼                   ▼                     ▼
+  auth.lfkdsk.org/             api.github.com/      api.splitstupid.lfkdsk.org/
+  splitstupid/callback         user                 groups, events, members
+       │                             ↑                       │
+       │ OAuth token exchange         only used to look up   │ D1 (groups,
+       │ (no scope requested)         the auth'd login       │  members,
+       ▼                                                     ▼  events)
+  lfkdsk-auth Worker            (each request hits /user once)
+  (separate repo, multi-tenant)
 ```
 
-Each group is a single public Gist whose `ledger.json` looks like:
+- **Frontend** (this repo's root): Vite + React, hash-routed (`#/g/<id>`),
+  signs in with GitHub via the `lfkdsk-auth` broker, then talks to the
+  backend Worker for everything ledger-related. Settlement is a pure
+  function over `(events, members)`, recomputed every render.
 
-```json
-{
-  "version": 1,
-  "kind": "splitstupid.ledger",
-  "name": "Tokyo trip",
-  "currency": "JPY",
-  "owner": "lfkdsk",
-  "members": ["lfkdsk", "alice", "bob"],
-  "events": [
-    { "id": "e_…", "type": "expense", "ts": "…",
-      "author": "lfkdsk", "payer": "lfkdsk",
-      "amount": 12000, "participants": ["lfkdsk","alice","bob"],
-      "split": "equal", "note": "晚饭" }
-  ]
-}
-```
+- **`worker/`**: Cloudflare Worker fronting a D1 database. Authenticates
+  each request by calling GitHub `/user` to resolve the token to a
+  login, then enforces ownership / membership against the DB. See
+  [`worker/README.md`](worker/README.md) for the route table and
+  deploy steps.
 
-Edits and deletes are recorded as `{ "type": "void", "targetId": "…" }`
-events so the gist stays append-only and `git log` is the audit trail.
+- **`lfkdsk-auth`**: a separate, multi-tenant Worker that handles the
+  OAuth code → access-token exchange for every `*.lfkdsk.org` project.
+  Lives at <https://github.com/lfkdsk/lfkdsk-auth>; SplitStupid is
+  registered there as the `splitstupid` project key.
 
-The settle view runs the classic min-cashflow greedy on the in-memory
-event list every render — pure function, zero state.
+## Data model (D1)
 
-## Roles
+Three tables, see [`worker/migrations/0001_init.sql`](worker/migrations/0001_init.sql):
 
-`role` is just data, not a GitHub permission:
+- `groups (id, name, currency, owner_login, created_at)`
+- `members (group_id, login, joined_at)` — PK on `(group_id, login)`,
+  indexed by `login` so a joiner can find every group they're in with
+  one query.
+- `events (id, group_id, type, payload, author_login, ts)` —
+  append-only; edits and deletes are `type='void'` rows referencing
+  `targetId` in the payload.
 
-- **Owner**: gist owner (member 0). Can write `ledger.json` directly.
-- **Member**: anyone in `members[]`. In v1 the owner records on
-  everyone's behalf. (The `comments.ts` extension point lets non-owners
-  POST gist comments containing `splitstupid-event` JSON blocks; the
-  owner periodically compacts those into `ledger.json`. Not wired into
-  the UI yet.)
-- **Viewer**: any signed-in GitHub user with the gist URL who isn't in
-  the member list. Renders fine; can't mutate.
-
-Identity comes from the OAuth token (`/user.login`), so authorship
-inside the file is trustworthy as far as GitHub's account boundary goes.
-
-## Privacy
-
-We use **public** gists, not secret ones. Counterintuitive but
-necessary: GitHub's REST API only lets the gist's owner read a secret
-gist (`GET /gists/{id}` 404s for everyone else, even if they have the
-id). For a friend who scans the share QR to actually load the ledger,
-the gist has to be public.
-
-The trade-off: public gists are listed on the owner's profile at
-`gist.github.com/<owner>` — a casual visitor can see "this user has
-expense groups". The contents of any specific group are still gated
-on knowing the gist id (random, unguessable) — the share URL hash is
-still the access capability for direct loads. Treat the discoverable
-*existence* as the privacy cost.
-
-Not for sensitive ledgers. Bolt on client-side encryption (key in URL
-fragment) if you need real privacy — the structure stays the same;
-only the `events` payload becomes ciphertext.
+Roles are just data (`groups.owner_login`, `members.login`); the
+Worker enforces them on writes. Identity comes from the OAuth token
+that the Worker resolves via `/user`, so author fields are
+trustworthy.
 
 ## Develop
 
+Frontend:
+
 ```sh
 npm install
-npm run dev          # http://localhost:5180
+npm run dev                 # http://localhost:5180
 ```
 
-Note: OAuth callback returns to `https://splitstupid.lfkdsk.org`
-unconditionally (the broker's `PROJECT_ORIGINS` allowlist is by
-project key, not by environment). Local dev can read existing gists
-with a manually-stashed token, but the full sign-in round-trip only
-works on the deployed origin.
+Backend (in another terminal, optional — `.env.production` already
+points at the deployed Worker, so this is only needed if you're
+changing the API):
+
+```sh
+cd worker
+npm install
+npm run dev                 # wrangler dev — local SQLite, http://localhost:8787
+```
+
+To make the local frontend talk to your local Worker, drop a
+`.env.local` next to `package.json`:
+
+```
+VITE_API_URL=http://localhost:8787
+```
 
 ## Deploy
 
-GitHub Pages, custom domain, set up by `.github/workflows/deploy.yml`.
-On push to `master`:
+Two pipelines, both triggered on push to `master`:
 
-1. Workflow builds with Node 20 and `vite build`.
-2. `public/CNAME` (containing `splitstupid.lfkdsk.org`) is copied into
-   `dist/` so Pages serves under the custom domain.
-3. `actions/deploy-pages@v4` publishes `dist/` to the `github-pages`
-   environment.
+1. **GH Pages** for the frontend (this repo's root). Workflow at
+   [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). Builds
+   with `vite build`, copies `public/CNAME` so Pages serves under
+   `splitstupid.lfkdsk.org`.
 
-One-time setup:
+2. **CF Workers Builds** for the Worker (`worker/` subdir). Configured
+   in the Cloudflare dashboard, root_directory = `worker`, deploy
+   command = `npx wrangler deploy`. First-time D1 setup is described
+   in [`worker/README.md`](worker/README.md).
 
-- **Repo settings** → Pages → Source: "GitHub Actions".
-- **DNS** (in the lfkdsk.org zone): `splitstupid` CNAME →
-  `lfkdsk.github.io`. DNS-only (no proxy) so Pages can issue a Let's
-  Encrypt cert.
-- **OAuth broker** ([lfkdsk-auth](https://github.com/lfkdsk/lfkdsk-auth)
-  `wrangler.toml`): make sure `splitstupid` is in `PROJECT_ORIGINS`.
+One-time DNS:
 
-## Why GitHub instead of Splitwise
+- `splitstupid.lfkdsk.org` → CNAME `lfkdsk.github.io` (DNS-only, no
+  proxy — Pages issues its own Let's Encrypt cert).
+- `api.splitstupid.lfkdsk.org` → bound to the Worker as a custom
+  domain in the CF dashboard (proxy on; CF terminates TLS).
 
-- The data is yours and lives in your GitHub.
-- `git log` is a free audit trail; revert is a free undo.
+And one-time auth-broker registration:
+
+- In [`lfkdsk-auth`](https://github.com/lfkdsk/lfkdsk-auth)'s
+  `wrangler.toml`, `PROJECT_ORIGINS` must contain
+  `"splitstupid": "https://splitstupid.lfkdsk.org"` (already there).
+
+## Privacy
+
+The D1 database is single-tenant and not exposed publicly — only the
+Worker reads it, and the Worker only returns rows to authenticated
+callers. There's no equivalent of "anyone with the gist URL can read"
+that bit us in the previous architecture; the share URL is still the
+discovery path, but reading the group always goes through the Worker
+which checks the bearer token.
+
+If you want a stronger guarantee than "trust the Worker's auth check"
+— e.g., zero-knowledge against the Worker operator — bolt on
+client-side encryption: encrypt event payloads with a key kept in the
+URL fragment, and never send the key to the server. The schema and
+flow don't have to change; only `events.payload` becomes ciphertext.
+
+## Why GitHub identity
+
 - No new account, no new password — your friends already have GitHub.
-- Caveat: your friends need GitHub. If they don't, use Splitwise.
+- The Worker doesn't need its own user table; `/user` is the source
+  of truth for "who is this token-holder".
+- Caveat: your friends need GitHub accounts. If they don't, use
+  Splitwise.
