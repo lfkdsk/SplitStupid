@@ -9,7 +9,7 @@ export default function Groups({ me }: { me: string }) {
   const [creating, setCreating] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
   const [name, setName] = useState('')
-  const [currency, setCurrency] = useState('JPY')
+  const [currency, setCurrency] = useState('USD')
 
   async function refresh() {
     setError(null)
@@ -82,9 +82,9 @@ export default function Groups({ me }: { me: string }) {
               required
             />
             <select className="currency-select" value={currency} onChange={e => setCurrency(e.target.value)}>
-              <option>JPY</option>
               <option>USD</option>
               <option>EUR</option>
+              <option>JPY</option>
               <option>CNY</option>
               <option>GBP</option>
             </select>
