@@ -39,7 +39,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
         readLedger(gistId),
         listGroupComments(gistId).catch(() => ({ events: [], joins: [] }) as GroupComments),
       ])
-      if (!h) { setError('Ledger not found or not a SplitStupid gist.'); return }
+      if (!h) { setError('Group not found, or this link isn\'t a SplitStupid group.'); return }
       setHandle(h)
       setComments(c)
     } catch (e: any) {
@@ -220,14 +220,6 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
           >
             <ShareIcon /> {shareOpen ? 'Hide share' : 'Share to invite'}
           </button>
-          <a
-            href={handle.htmlUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{ alignSelf: 'center', fontSize: 13 }}
-          >
-            open gist ↗
-          </a>
         </div>
       </div>
 

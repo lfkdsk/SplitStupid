@@ -44,7 +44,7 @@ export default function Groups({ me }: { me: string }) {
     // destructive action is its own UX rabbit hole; native confirm is
     // un-ambiguous and unmissable.
     const ok = window.confirm(
-      `Delete group "${g.ledger.name}"? This deletes the underlying gist; the ledger and its history are gone for good.`,
+      `Delete group "${g.ledger.name}"? The ledger and its full history will be gone for good.`,
     )
     if (!ok) return
     setDeleting(g.gistId)

@@ -14,8 +14,8 @@ export default function Setup({
           <div className="setup-logo" aria-hidden="true">S</div>
           <h1 className="setup-title">SplitStupid</h1>
           <p className="setup-tagline">
-            A Splitwise-shaped ledger that lives in a GitHub Gist.
-            <br />Sign in to start an expense group.
+            A small expense ledger for friend groups.
+            <br />Sign in with GitHub to start.
           </p>
         </div>
         {authError && (
