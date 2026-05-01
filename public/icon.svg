@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="14" fill="#1a1410"/>
+  <text x="32" y="46" text-anchor="middle"
+        font-family="Fraunces, 'Source Serif Pro', Charter, Georgia, serif"
+        font-style="italic" font-weight="700" font-size="44"
+        letter-spacing="-2" fill="#faf6ef">S</text>
+  <path d="M48 12 L16 56" stroke="#c2410c" stroke-width="4" stroke-linecap="round"/>
+</svg>
