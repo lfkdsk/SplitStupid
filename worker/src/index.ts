@@ -391,6 +391,14 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     const split = body.split
     const note = body.note
     if (typeof payer !== 'string') return json({ error: 'payer required' }, 400)
+    // You can only record an expense YOU paid. Otherwise alice could
+    // post "bob paid 10000" on bob's behalf, corrupting the
+    // GH-signed authorship guarantee. The owner gets no exception —
+    // if they want to record someone else's spend, that someone has
+    // to record it themselves.
+    if (payer !== me) {
+      return json({ error: 'you can only record expenses you paid' }, 403)
+    }
     if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
       return json({ error: 'amount must be a positive integer (minor units)' }, 400)
     }

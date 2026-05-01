@@ -19,8 +19,9 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  // Add-expense form state.
-  const [payer, setPayer] = useState(me)
+  // Add-expense form state. Payer is always the authenticated user —
+  // server enforces this too, so even a poked request can't claim
+  // someone else paid.
   const [amountStr, setAmountStr] = useState('')
   const [note, setNote] = useState('')
   const [participants, setParticipants] = useState<string[]>([])
@@ -41,7 +42,6 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   useEffect(() => {
     if (!group) return
     setParticipants(prev => prev.length ? prev : group.members)
-    setPayer(prev => group.members.includes(prev) ? prev : group.owner)
   }, [group])
 
   const balances = useMemo(
@@ -99,7 +99,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     setError(null)
     try {
       await postEvent(group.id, makeExpense({
-        payer,
+        payer: me,
         amount,
         participants,
         split: 'equal',
@@ -222,12 +222,9 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
             <h3 className="section-title">Add expense</h3>
           </div>
           <form onSubmit={addExpense} className="form-stack">
-            <div className="row">
-              <select value={payer} onChange={e => setPayer(e.target.value)}>
-                {group.members.map(m => (
-                  <option key={m} value={m}>{m} paid</option>
-                ))}
-              </select>
+            <div className="payer-fixed">
+              <img src={avatarUrl(me, 36)} alt="" />
+              <span><strong>{me}</strong> paid</span>
               <input
                 className="amount"
                 inputMode="decimal"

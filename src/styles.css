@@ -861,3 +861,38 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 .join-cta .section-title.lg {
   color: var(--accent);
 }
+
+/* Fixed-payer row inside Add expense — replaces the old payer dropdown,
+   since you can only record expenses you yourself paid. The avatar +
+   login is a visual reminder, the amount input takes the rest of the
+   row. */
+.payer-fixed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+}
+.payer-fixed img {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.payer-fixed > span {
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+.payer-fixed input.amount {
+  flex: 1;
+  border: 0;
+  background: var(--bg-elevated);
+  min-width: 0;
+}
+.payer-fixed input.amount:focus {
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
