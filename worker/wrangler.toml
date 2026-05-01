@@ -13,7 +13,7 @@ binding = "DB"
 database_name = "splitstupid"
 # Paste the database_id you got from `npx wrangler d1 create splitstupid`
 # here. The init shows it once on creation.
-database_id = "REPLACE_WITH_D1_ID_AFTER_wrangler_d1_create"
+database_id = "c716062a-f103-420b-9c23-c6921ad5360c"
 
 [vars]
 # Origins allowed to talk to this Worker. Worker echoes the request's
