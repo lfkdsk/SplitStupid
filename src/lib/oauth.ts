@@ -5,6 +5,10 @@
 // since the lfkdsk-auth Worker contract is the same for every project.
 
 const STATE_KEY = 'splitstupid_oauth_state'
+// Stashes the deep-link hash (e.g. "#/g/abc123") that the user landed on
+// before kicking off OAuth, so the post-callback URL can restore it
+// instead of dropping the user on the home screen.
+const RETURN_TO_KEY = 'splitstupid_oauth_return_to'
 
 const CLIENT_ID = import.meta.env.VITE_OAUTH_CLIENT_ID as string | undefined
 const WORKER_URL = import.meta.env.VITE_OAUTH_WORKER_URL as string | undefined
@@ -32,6 +36,19 @@ export function startOAuthFlow(): void {
   }
   const state = genState()
   sessionStorage.setItem(STATE_KEY, state)
+
+  // If the user was already on a deep link (e.g. they opened a share
+  // URL while logged out), preserve it for post-callback restoration.
+  // We accept any "#/..." path; the callback fragment "#oauth_token=…"
+  // does NOT start with "#/" so it can't accidentally end up as a
+  // return-to.
+  const currentHash = window.location.hash
+  if (currentHash.startsWith('#/') && currentHash !== '#/') {
+    sessionStorage.setItem(RETURN_TO_KEY, currentHash)
+  } else {
+    sessionStorage.removeItem(RETURN_TO_KEY)
+  }
+
   const params = new URLSearchParams({
     client_id: CLIENT_ID!,
     redirect_uri: `${WORKER_URL!.replace(/\/$/, '')}/callback`,
@@ -62,7 +79,22 @@ export function consumeOAuthCallback(): OAuthCallback | null {
   const stateParam = params.get('state')
   if (!token && !errorParam) return null
 
-  history.replaceState(null, '', window.location.pathname + window.location.search)
+  // Replace the URL: drop the OAuth fragment AND restore the deep link
+  // the user was on before sign-in (if any). We dispatch a hashchange
+  // event afterward so the in-app router picks up the restored route
+  // without a full reload — without this, useHashRoute is still showing
+  // the stale OAuth hash from initial mount.
+  const stashedReturnTo = sessionStorage.getItem(RETURN_TO_KEY)
+  sessionStorage.removeItem(RETURN_TO_KEY)
+  const restoredHash = stashedReturnTo && stashedReturnTo.startsWith('#/') && stashedReturnTo !== '#/'
+    ? stashedReturnTo
+    : ''
+  history.replaceState(null, '', window.location.pathname + window.location.search + restoredHash)
+  if (restoredHash) {
+    // No constructor args — the listener in useHashRoute doesn't read
+    // oldURL/newURL, so a plain Event is enough to retrigger it.
+    window.dispatchEvent(new Event('hashchange'))
+  }
 
   const expected = sessionStorage.getItem(STATE_KEY)
   sessionStorage.removeItem(STATE_KEY)

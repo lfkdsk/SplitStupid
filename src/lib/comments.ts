@@ -76,13 +76,17 @@ export async function postJoinComment(gistId: string): Promise<void> {
 
 export async function postEventComment(
   gistId: string,
-  event: Omit<ExpenseEvent, 'author' | 'ts'> | Omit<VoidEvent, 'author' | 'ts'>,
+  event: ExpenseEvent | VoidEvent,
 ): Promise<void> {
   // Author + ts come from the comment metadata at read time, so we strip
   // whatever the caller stashed to avoid drift between body and signature.
+  // Accepting full events (not Omit<>) keeps callers from having to
+  // reshape; the same makeExpense / makeVoid helpers feed both the
+  // gist-PATCH path (owner) and the comment path (non-owner).
+  const { author: _a, ts: _t, ...payload } = event
   await getClient().gists.createComment({
     gist_id: gistId,
-    body: formatBody(event, 'New SplitStupid event:'),
+    body: formatBody(payload, 'New SplitStupid event:'),
   })
 }
 

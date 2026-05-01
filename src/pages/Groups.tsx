@@ -5,20 +5,38 @@ import {
   listLedgers,
   type LedgerHandle,
 } from '../lib/gist'
+import { listJoinedLedgers, recordLeave } from '../lib/joined'
 import { avatarUrl } from '../lib/avatar'
 
 export default function Groups({ me }: { me: string }) {
   const [groups, setGroups] = useState<LedgerHandle[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [deleting, setDeleting] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [currency, setCurrency] = useState('JPY')
 
   async function refresh() {
     setError(null)
-    try { setGroups(await listLedgers()) }
-    catch (e: any) { setError(e?.message || 'Failed to list ledgers'); setGroups([]) }
+    try {
+      // Owned and joined are independent reads — fire in parallel. Then
+      // dedupe by gistId (a user joining a group they already own would
+      // appear twice otherwise; owner wins).
+      const [owned, joined] = await Promise.all([
+        listLedgers(),
+        listJoinedLedgers().catch(() => [] as LedgerHandle[]),
+      ])
+      const seen = new Set<string>()
+      const merged: LedgerHandle[] = []
+      for (const h of [...owned, ...joined]) {
+        if (seen.has(h.gistId)) continue
+        seen.add(h.gistId)
+        merged.push(h)
+      }
+      setGroups(merged)
+    } catch (e: any) {
+      setError(e?.message || 'Failed to list ledgers'); setGroups([])
+    }
   }
   useEffect(() => { refresh() }, [])
 
@@ -28,8 +46,7 @@ export default function Groups({ me }: { me: string }) {
     setError(null)
     try {
       // Owner is the only initial member. Everyone else joins by scanning
-      // the share QR — see Group page's join CTA. createLedger guarantees
-      // owner is in members[].
+      // the share QR — see Group page's join CTA.
       const handle = await createLedger({ name: name.trim(), currency, owner: me, members: [] })
       window.location.hash = `#/g/${handle.gistId}`
     } catch (err: any) {
@@ -39,23 +56,27 @@ export default function Groups({ me }: { me: string }) {
     }
   }
 
-  async function handleDelete(g: LedgerHandle) {
-    // window.confirm is intentional — building a custom modal for a
-    // destructive action is its own UX rabbit hole; native confirm is
-    // un-ambiguous and unmissable.
+  // Owner → hard delete the underlying ledger (gone for everyone).
+  // Joiner → "leave"; just removes the entry from the user's index, the
+  // group continues to exist and they can rejoin from the share link.
+  async function handleRemove(g: LedgerHandle) {
+    const isOwned = g.ledger.owner === me
     const ok = window.confirm(
-      `Delete group "${g.ledger.name}"? The ledger and its full history will be gone for good.`,
+      isOwned
+        ? `Delete group "${g.ledger.name}"? The ledger and its full history will be gone for good.`
+        : `Remove "${g.ledger.name}" from your list? The group will still exist; you can rejoin from the share link.`,
     )
     if (!ok) return
-    setDeleting(g.gistId)
+    setRemoving(g.gistId)
     setError(null)
     try {
-      await deleteLedger(g.gistId)
+      if (isOwned) await deleteLedger(g.gistId)
+      else await recordLeave(g.gistId)
       setGroups(prev => prev ? prev.filter(x => x.gistId !== g.gistId) : prev)
     } catch (err: any) {
-      setError(err?.message || 'Failed to delete')
+      setError(err?.message || (isOwned ? 'Failed to delete' : 'Failed to remove'))
     } finally {
-      setDeleting(null)
+      setRemoving(null)
     }
   }
 
@@ -107,43 +128,44 @@ export default function Groups({ me }: { me: string }) {
         </div>
         {groups === null && <p className="empty">Loading…</p>}
         {groups && groups.length === 0 && <p className="empty">No groups yet — create one above.</p>}
-        {groups && groups.map(g => (
-          <div key={g.gistId} className="group-row">
-            <a href={`#/g/${g.gistId}`} className="group-link">
-              <div className="avatar-stack">
-                {g.ledger.members.slice(0, 4).map(m => (
-                  <img key={m} src={avatarUrl(m, 56)} alt={m} />
-                ))}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <h3 className="group-name">{g.ledger.name}</h3>
-                <p className="group-meta">
-                  {g.ledger.members.length} member{g.ledger.members.length === 1 ? '' : 's'}
-                  {' · '}{g.ledger.currency}
-                  {' · '}{visibleEventCount(g)} event{visibleEventCount(g) === 1 ? '' : 's'}
-                </p>
-              </div>
-              <span className="group-link-chev">→</span>
-            </a>
-            <button
-              type="button"
-              className="group-delete"
-              onClick={() => handleDelete(g)}
-              disabled={deleting === g.gistId}
-              title="Delete group"
-              aria-label="Delete group"
-            >
-              {deleting === g.gistId ? '…' : <TrashIcon />}
-            </button>
-          </div>
-        ))}
+        {groups && groups.map(g => {
+          const isOwned = g.ledger.owner === me
+          return (
+            <div key={g.gistId} className="group-row">
+              <a href={`#/g/${g.gistId}`} className="group-link">
+                <div className="avatar-stack">
+                  {g.ledger.members.slice(0, 4).map(m => (
+                    <img key={m} src={avatarUrl(m, 56)} alt={m} />
+                  ))}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <h3 className="group-name">{g.ledger.name}</h3>
+                  <p className="group-meta">
+                    {isOwned ? 'owner' : `joined · ${g.ledger.owner}`}
+                    {' · '}{g.ledger.currency}
+                    {' · '}{visibleEventCount(g)} event{visibleEventCount(g) === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <span className="group-link-chev">→</span>
+              </a>
+              <button
+                type="button"
+                className="group-delete"
+                onClick={() => handleRemove(g)}
+                disabled={removing === g.gistId}
+                title={isOwned ? 'Delete group' : 'Remove from your list'}
+                aria-label={isOwned ? 'Delete group' : 'Remove from your list'}
+              >
+                {removing === g.gistId ? '…' : (isOwned ? <TrashIcon /> : <LeaveIcon />)}
+              </button>
+            </div>
+          )
+        })}
       </div>
     </>
   )
 }
 
-// Show the count of *active* expenses (voids and the events they
-// reference don't really represent activity in the user's mental model).
 function visibleEventCount(g: LedgerHandle): number {
   const voided = new Set(
     g.ledger.events.filter(e => e.type === 'void').map(e => e.targetId),
@@ -155,6 +177,15 @@ function TrashIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M2 4h10M5 4V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V4M3 4l.5 7.5a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1L11 4M6 6.5v4M8 6.5v4"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function LeaveIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M5 2.5H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2M9 4.5L11.5 7M11.5 7L9 9.5M11.5 7H6"
         stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
