@@ -1,19 +1,20 @@
-// Per-user "groups I've joined" index. The owner's gists.list returns
-// only gists they OWN — but a user who joined via QR scan needs to see
-// those groups in their own Groups list too. Solution: every user has
-// a single dedicated index gist in their own account that records the
-// gistIds (and a bit of metadata) of groups they've joined.
+// Per-device "groups I've joined" index.
 //
-// The index is itself a gist, matching the rest of the storage model
-// ("everything the user has lives in their GH account"). It's lazily
-// created on first join — users who only own groups never accrue an
-// index gist.
+// Why localStorage instead of a personal index gist: joining a friend's
+// group should not create new artifacts in the joiner's GitHub account.
+// The only thing a join leaves on GitHub is a `splitstupid-event` join
+// comment on the owner's gist — that's it. The list of "groups I'm in"
+// is purely a UI affordance for the joiner's own browser to remember.
+//
+// Trade-off: the list isn't synced across devices. The share URL is
+// the recovery path — opening it on a new device adds the group back
+// to that device's localStorage. For owned groups this isn't an issue
+// (gists.list always finds them); only joined groups depend on
+// localStorage.
 
-import { getClient } from './github'
 import { readLedger, type LedgerHandle } from './gist'
 
-const INDEX_FILENAME = 'splitstupid-index.json'
-const INDEX_DESCRIPTION = '[SplitStupid Index] joined groups'
+const STORAGE_KEY = 'splitstupid_joined'
 
 export interface JoinedEntry {
   gistId: string
@@ -22,87 +23,40 @@ export interface JoinedEntry {
   joinedAt: string
 }
 
-interface IndexFile {
-  version: 1
-  kind: 'splitstupid.index'
-  joined: JoinedEntry[]
-}
-
-interface IndexHandle {
-  gistId: string
-  file: IndexFile
-}
-
-async function findIndexGist(): Promise<{ id: string; content: string } | null> {
-  const { data } = await getClient().gists.list({ per_page: 100 })
-  for (const g of data) {
-    if (g.description === INDEX_DESCRIPTION && g.files && INDEX_FILENAME in g.files) {
-      // List endpoint truncates content over ~1MB; we re-fetch to be safe.
-      const { data: full } = await getClient().gists.get({ gist_id: g.id! })
-      const file = full.files?.[INDEX_FILENAME]
-      if (file?.content) return { id: full.id!, content: file.content }
-    }
+function load(): JoinedEntry[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((e: any) => typeof e?.gistId === 'string')
+      : []
+  } catch {
+    return []
   }
-  return null
 }
 
-async function loadIndex(): Promise<IndexHandle | null> {
-  const found = await findIndexGist()
-  if (!found) return null
-  let parsed: unknown
-  try { parsed = JSON.parse(found.content) }
-  catch { return null }
-  if (!isIndex(parsed)) return null
-  return { gistId: found.id, file: parsed }
+function save(entries: JoinedEntry[]): void {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)) }
+  catch { /* quota or disabled — accept that the list won't persist */ }
 }
 
-async function createIndex(): Promise<IndexHandle> {
-  const empty: IndexFile = { version: 1, kind: 'splitstupid.index', joined: [] }
-  const { data } = await getClient().gists.create({
-    description: INDEX_DESCRIPTION,
-    public: false,
-    files: { [INDEX_FILENAME]: { content: serialize(empty) } },
-  })
-  return { gistId: data.id!, file: empty }
+export function loadJoinedEntries(): JoinedEntry[] {
+  return load()
 }
 
-async function ensureIndex(): Promise<IndexHandle> {
-  return (await loadIndex()) ?? (await createIndex())
-}
-
-export async function loadJoinedEntries(): Promise<JoinedEntry[]> {
-  const handle = await loadIndex()
-  return handle?.file.joined ?? []
-}
-
-// Idempotent on gistId — re-joining moves the entry to the front
-// (most-recently-joined first) instead of duplicating.
+// Idempotent: re-joining moves the entry to the front (most-recently
+// joined first), no duplicates.
 export async function recordJoin(entry: JoinedEntry): Promise<void> {
-  const handle = await ensureIndex()
-  const filtered = handle.file.joined.filter(e => e.gistId !== entry.gistId)
-  const next: IndexFile = {
-    ...handle.file,
-    joined: [entry, ...filtered],
-  }
-  await getClient().gists.update({
-    gist_id: handle.gistId,
-    files: { [INDEX_FILENAME]: { content: serialize(next) } },
-  })
+  const filtered = load().filter(e => e.gistId !== entry.gistId)
+  save([entry, ...filtered])
 }
 
-// "Remove from my list" — does NOT delete the underlying ledger; the
-// owner still has it, the user simply takes it off their dashboard.
-// They can rejoin any time by reopening the share link.
+// "Remove from my list" — just forgets the entry locally. The group
+// still exists on GitHub; the user can rejoin any time from the share
+// link, which would re-add it to localStorage on the next join click.
 export async function recordLeave(gistId: string): Promise<void> {
-  const handle = await loadIndex()
-  if (!handle) return
-  const next = handle.file.joined.filter(e => e.gistId !== gistId)
-  if (next.length === handle.file.joined.length) return
-  const updated: IndexFile = { ...handle.file, joined: next }
-  await getClient().gists.update({
-    gist_id: handle.gistId,
-    files: { [INDEX_FILENAME]: { content: serialize(updated) } },
-  })
+  save(load().filter(e => e.gistId !== gistId))
 }
 
 // Resolve all joined entries to full LedgerHandles. Entries whose
@@ -110,7 +64,7 @@ export async function recordLeave(gistId: string): Promise<void> {
 // alternative is showing a tombstone in the UI which is uglier than
 // just dropping them.
 export async function listJoinedLedgers(): Promise<LedgerHandle[]> {
-  const entries = await loadJoinedEntries()
+  const entries = load()
   const handles = await Promise.all(
     entries.map(async e => {
       try { return await readLedger(e.gistId) }
@@ -118,14 +72,4 @@ export async function listJoinedLedgers(): Promise<LedgerHandle[]> {
     }),
   )
   return handles.filter((h): h is LedgerHandle => !!h)
-}
-
-function serialize(f: IndexFile): string {
-  return JSON.stringify(f, null, 2) + '\n'
-}
-
-function isIndex(x: unknown): x is IndexFile {
-  if (!x || typeof x !== 'object') return false
-  const o = x as Record<string, unknown>
-  return o.kind === 'splitstupid.index' && Array.isArray(o.joined)
 }
