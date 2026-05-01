@@ -30,8 +30,7 @@ export default function App() {
   const hash = useHashRoute()
 
   // One-shot boot: consume an OAuth callback fragment if present, then
-  // fall back to a stashed token from localStorage. Either way we end up
-  // calling /user to validate the token works before showing the app.
+  // fall back to a stashed token from localStorage.
   useEffect(() => {
     let cancelled = false
     async function boot() {
@@ -76,20 +75,19 @@ export default function App() {
     return <Setup authError={authError} onDismissError={() => setAuthError(null)} />
   }
 
-  // Routing fork. `#/g/<gistId>` is the only recognised detail route;
-  // anything else lands on the group list.
   const groupMatch = hash.match(/^#\/g\/([A-Za-z0-9]+)$/)
 
   return (
     <div className="app">
       <header className="app-header">
-        <h1>
-          <a href="#/" style={{ color: 'inherit' }}>SplitStupid</a>
-        </h1>
-        <div className="me">
-          <img src={me.avatar} alt="" width={20} height={20} style={{ verticalAlign: 'middle', borderRadius: '50%', marginRight: 6 }} />
-          {me.login}
-          <button className="secondary" style={{ marginLeft: 8, padding: '4px 8px', fontSize: 12 }} onClick={signOut}>Sign out</button>
+        <a href="#/" className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          SplitStupid
+        </a>
+        <div className="user-pill">
+          <img src={me.avatar} alt="" />
+          <span className="user-pill-name">{me.login}</span>
+          <button className="ghost" onClick={signOut}>Sign out</button>
         </div>
       </header>
       {groupMatch

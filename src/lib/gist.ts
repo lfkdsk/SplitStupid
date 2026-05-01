@@ -123,6 +123,12 @@ export async function appendEvents(
   }
 }
 
+// Hard delete the underlying gist. There's no recycle bin; once gone,
+// it's gone — caller is responsible for confirming with the user.
+export async function deleteLedger(gistId: string): Promise<void> {
+  await getClient().gists.delete({ gist_id: gistId })
+}
+
 export class ConflictError extends Error {
   constructor(message: string, public latest: LedgerHandle) {
     super(message)
