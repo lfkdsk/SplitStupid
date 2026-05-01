@@ -26,10 +26,10 @@ function genState(): string {
   return s
 }
 
-// scope=gist is the minimum needed: create/read/write the user's own gists
-// (public + secret) plus comment on any gist. We do NOT request `repo` —
-// SplitStupid never touches repos. Narrow scope = less alarming consent
-// page + smaller blast radius if a token leaks.
+// No scope: SplitStupid's backend (api.splitstupid.lfkdsk.org) only uses
+// the OAuth token to call GitHub /user once per request to resolve a
+// login. /user works with no-scope tokens. Smaller blast radius if a
+// token leaks vs. asking for `gist` / `repo` we don't actually need.
 export function startOAuthFlow(): void {
   if (!isOAuthConfigured()) {
     throw new Error('OAuth is not configured: set VITE_OAUTH_CLIENT_ID and VITE_OAUTH_WORKER_URL')
@@ -52,7 +52,6 @@ export function startOAuthFlow(): void {
   const params = new URLSearchParams({
     client_id: CLIENT_ID!,
     redirect_uri: `${WORKER_URL!.replace(/\/$/, '')}/callback`,
-    scope: 'gist',
     state,
   })
   window.location.href = `https://github.com/login/oauth/authorize?${params.toString()}`

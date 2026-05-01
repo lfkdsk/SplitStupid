@@ -1,21 +1,32 @@
-// SplitStupid data model. One ledger = one gist. The gist holds a single
-// `ledger.json` whose schema is below. Events are append-only: edits and
-// deletes are expressed as `void` events that reference the targetId,
-// keeping the gist's git history readable.
+// SplitStupid data shapes. Mirror exactly what api.splitstupid.lfkdsk.org
+// returns; we don't re-shape on the client. Settlement / balance rendering
+// stays pure-functional over these.
 
 export type Member = string // GitHub login
 
-export interface Ledger {
-  version: 1
-  /** Sentinel so we can distinguish SplitStupid gists from arbitrary ones. */
-  kind: 'splitstupid.ledger'
+export interface Group {
+  id: string
   name: string
-  /** ISO 4217 code or any short token; we don't validate. */
   currency: string
   owner: Member
   members: Member[]
   events: Event[]
-  createdAt: string
+  /** Unix ms (server-assigned). */
+  createdAt: number
+}
+
+/** Lightweight shape returned by GET /groups for the dashboard list view. */
+export interface GroupSummary {
+  id: string
+  name: string
+  currency: string
+  owner: Member
+  /** Convenience flag set by the server: am I owner here, or just a member? */
+  role: 'owner' | 'member'
+  members: Member[]
+  /** Active expense count (voided ones excluded). */
+  eventCount: number
+  createdAt: number
 }
 
 export type Event = ExpenseEvent | VoidEvent
@@ -23,14 +34,13 @@ export type Event = ExpenseEvent | VoidEvent
 export interface ExpenseEvent {
   id: string
   type: 'expense'
+  /** Server-assigned ISO timestamp. */
   ts: string
-  /** GitHub login that recorded this event. In single-writer mode == owner. */
   author: Member
   payer: Member
-  /** Stored in **minor units** (e.g. cents). Avoids float drift in settlement. */
+  /** Stored in **minor units** (cents / yen) — integer math, no float drift. */
   amount: number
   participants: Member[]
-  /** 'equal' = split evenly across participants; otherwise an explicit map. */
   split: 'equal' | Record<Member, number>
   note?: string
 }

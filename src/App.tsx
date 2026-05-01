@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { initClient, getAuthenticatedUser } from './lib/github'
+import { fetchMe } from './lib/me'
+import { setApiToken } from './lib/api'
 import { clearToken, consumeOAuthCallback, loadToken, saveToken } from './lib/oauth'
 import Setup from './pages/Setup'
 import Groups from './pages/Groups'
@@ -30,7 +31,8 @@ export default function App() {
   const hash = useHashRoute()
 
   // One-shot boot: consume an OAuth callback fragment if present, then
-  // fall back to a stashed token from localStorage.
+  // fall back to a stashed token from localStorage. Validate by calling
+  // GitHub /user — if that succeeds, we know the token still works.
   useEffect(() => {
     let cancelled = false
     async function boot() {
@@ -45,14 +47,15 @@ export default function App() {
       }
       const t = loadToken()
       if (!t) { setBooting(false); return }
-      initClient(t)
+      setApiToken(t)
       try {
-        const user = await getAuthenticatedUser()
+        const user = await fetchMe(t)
         if (cancelled) return
         setToken(t)
         setMe({ login: user.login, avatar: user.avatar_url })
       } catch {
         clearToken()
+        setApiToken(null)
         setAuthError('Stored token rejected by GitHub. Sign in again.')
       } finally {
         if (!cancelled) setBooting(false)
@@ -64,6 +67,7 @@ export default function App() {
 
   function signOut() {
     clearToken()
+    setApiToken(null)
     setToken(null)
     setMe(null)
     window.location.hash = '#/'
@@ -91,7 +95,7 @@ export default function App() {
         </div>
       </header>
       {groupMatch
-        ? <Group gistId={groupMatch[1]} me={me.login} />
+        ? <Group groupId={groupMatch[1]} me={me.login} />
         : <Groups me={me.login} />}
     </div>
   )

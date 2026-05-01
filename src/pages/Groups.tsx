@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react'
-import {
-  createLedger,
-  deleteLedger,
-  listLedgers,
-  type LedgerHandle,
-} from '../lib/gist'
-import { listJoinedLedgers, recordLeave } from '../lib/joined'
+import { createGroup, deleteGroup, leaveGroup, listGroups } from '../lib/api'
+import type { GroupSummary } from '../types'
 import { avatarUrl } from '../lib/avatar'
 
 export default function Groups({ me }: { me: string }) {
-  const [groups, setGroups] = useState<LedgerHandle[] | null>(null)
+  const [groups, setGroups] = useState<GroupSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
@@ -18,25 +13,8 @@ export default function Groups({ me }: { me: string }) {
 
   async function refresh() {
     setError(null)
-    try {
-      // Owned and joined are independent reads — fire in parallel. Then
-      // dedupe by gistId (a user joining a group they already own would
-      // appear twice otherwise; owner wins).
-      const [owned, joined] = await Promise.all([
-        listLedgers(),
-        listJoinedLedgers().catch(() => [] as LedgerHandle[]),
-      ])
-      const seen = new Set<string>()
-      const merged: LedgerHandle[] = []
-      for (const h of [...owned, ...joined]) {
-        if (seen.has(h.gistId)) continue
-        seen.add(h.gistId)
-        merged.push(h)
-      }
-      setGroups(merged)
-    } catch (e: any) {
-      setError(e?.message || 'Failed to list ledgers'); setGroups([])
-    }
+    try { setGroups(await listGroups()) }
+    catch (e: any) { setError(e?.message || 'Failed to list groups'); setGroups([]) }
   }
   useEffect(() => { refresh() }, [])
 
@@ -45,10 +23,8 @@ export default function Groups({ me }: { me: string }) {
     setCreating(true)
     setError(null)
     try {
-      // Owner is the only initial member. Everyone else joins by scanning
-      // the share QR — see Group page's join CTA.
-      const handle = await createLedger({ name: name.trim(), currency, owner: me, members: [] })
-      window.location.hash = `#/g/${handle.gistId}`
+      const g = await createGroup({ name: name.trim(), currency })
+      window.location.hash = `#/g/${g.id}`
     } catch (err: any) {
       setError(err?.message || 'Failed to create group')
     } finally {
@@ -56,29 +32,31 @@ export default function Groups({ me }: { me: string }) {
     }
   }
 
-  // Owner → hard delete the underlying ledger (gone for everyone).
-  // Joiner → "leave"; just removes the entry from the user's index, the
-  // group continues to exist and they can rejoin from the share link.
-  async function handleRemove(g: LedgerHandle) {
-    const isOwned = g.ledger.owner === me
+  // Owner → hard delete the underlying group (gone for everyone).
+  // Non-owner → leave; the group continues to exist for everyone else,
+  // and they can rejoin from the share link.
+  async function handleRemove(g: GroupSummary) {
+    const isOwned = g.role === 'owner'
     const ok = window.confirm(
       isOwned
-        ? `Delete group "${g.ledger.name}"? The ledger and its full history will be gone for good.`
-        : `Remove "${g.ledger.name}" from your list? The group will still exist; you can rejoin from the share link.`,
+        ? `Delete group "${g.name}"? The ledger and its full history will be gone for good.`
+        : `Leave "${g.name}"? The group will still exist; you can rejoin from the share link.`,
     )
     if (!ok) return
-    setRemoving(g.gistId)
+    setRemoving(g.id)
     setError(null)
     try {
-      if (isOwned) await deleteLedger(g.gistId)
-      else await recordLeave(g.gistId)
-      setGroups(prev => prev ? prev.filter(x => x.gistId !== g.gistId) : prev)
+      if (isOwned) await deleteGroup(g.id)
+      else await leaveGroup(g.id)
+      setGroups(prev => prev ? prev.filter(x => x.id !== g.id) : prev)
     } catch (err: any) {
-      setError(err?.message || (isOwned ? 'Failed to delete' : 'Failed to remove'))
+      setError(err?.message || (isOwned ? 'Failed to delete' : 'Failed to leave'))
     } finally {
       setRemoving(null)
     }
   }
+
+  void me
 
   return (
     <>
@@ -129,21 +107,21 @@ export default function Groups({ me }: { me: string }) {
         {groups === null && <p className="empty">Loading…</p>}
         {groups && groups.length === 0 && <p className="empty">No groups yet — create one above.</p>}
         {groups && groups.map(g => {
-          const isOwned = g.ledger.owner === me
+          const isOwned = g.role === 'owner'
           return (
-            <div key={g.gistId} className="group-row">
-              <a href={`#/g/${g.gistId}`} className="group-link">
+            <div key={g.id} className="group-row">
+              <a href={`#/g/${g.id}`} className="group-link">
                 <div className="avatar-stack">
-                  {g.ledger.members.slice(0, 4).map(m => (
+                  {g.members.slice(0, 4).map(m => (
                     <img key={m} src={avatarUrl(m, 56)} alt={m} />
                   ))}
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <h3 className="group-name">{g.ledger.name}</h3>
+                  <h3 className="group-name">{g.name}</h3>
                   <p className="group-meta">
-                    {isOwned ? 'owner' : `joined · ${g.ledger.owner}`}
-                    {' · '}{g.ledger.currency}
-                    {' · '}{visibleEventCount(g)} event{visibleEventCount(g) === 1 ? '' : 's'}
+                    {isOwned ? 'owner' : `joined · ${g.owner}`}
+                    {' · '}{g.currency}
+                    {' · '}{g.eventCount} event{g.eventCount === 1 ? '' : 's'}
                   </p>
                 </div>
                 <span className="group-link-chev">→</span>
@@ -152,11 +130,11 @@ export default function Groups({ me }: { me: string }) {
                 type="button"
                 className="group-delete"
                 onClick={() => handleRemove(g)}
-                disabled={removing === g.gistId}
-                title={isOwned ? 'Delete group' : 'Remove from your list'}
-                aria-label={isOwned ? 'Delete group' : 'Remove from your list'}
+                disabled={removing === g.id}
+                title={isOwned ? 'Delete group' : 'Leave group'}
+                aria-label={isOwned ? 'Delete group' : 'Leave group'}
               >
-                {removing === g.gistId ? '…' : (isOwned ? <TrashIcon /> : <LeaveIcon />)}
+                {removing === g.id ? '…' : (isOwned ? <TrashIcon /> : <LeaveIcon />)}
               </button>
             </div>
           )
@@ -164,13 +142,6 @@ export default function Groups({ me }: { me: string }) {
       </div>
     </>
   )
-}
-
-function visibleEventCount(g: LedgerHandle): number {
-  const voided = new Set(
-    g.ledger.events.filter(e => e.type === 'void').map(e => e.targetId),
-  )
-  return g.ledger.events.filter(e => e.type === 'expense' && !voided.has(e.id)).length
 }
 
 function TrashIcon() {

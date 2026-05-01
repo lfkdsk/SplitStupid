@@ -1,27 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
-  appendEvents,
-  ConflictError,
+  joinGroup,
   makeExpense,
   makeVoid,
-  readLedger,
-  type LedgerHandle,
-} from '../lib/gist'
-import {
-  listGroupComments,
-  postEventComment,
-  postJoinComment,
-  type GroupComments,
-} from '../lib/comments'
-import { recordJoin } from '../lib/joined'
+  postEvent,
+  readGroup,
+} from '../lib/api'
 import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settle'
 import { avatarUrl } from '../lib/avatar'
-import type { Event } from '../types'
+import type { Group } from '../types'
 
-export default function Group({ gistId, me }: { gistId: string; me: string }) {
-  const [handle, setHandle] = useState<LedgerHandle | null>(null)
-  const [comments, setComments] = useState<GroupComments | null>(null)
+export default function Group({ groupId, me }: { groupId: string; me: string }) {
+  const [group, setGroup] = useState<Group | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [joining, setJoining] = useState(false)
@@ -37,47 +28,25 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
   async function refresh() {
     setError(null)
     try {
-      const [h, c] = await Promise.all([
-        readLedger(gistId),
-        listGroupComments(gistId).catch(() => ({ events: [], joins: [] }) as GroupComments),
-      ])
-      if (!h) { setError('Group not found, or this link isn\'t a SplitStupid group.'); return }
-      setHandle(h)
-      setComments(c)
+      setGroup(await readGroup(groupId))
     } catch (e: any) {
-      setError(e?.message || 'Failed to read ledger')
+      setError(e?.message || 'Failed to load group')
     }
   }
-  useEffect(() => { refresh() }, [gistId])
+  useEffect(() => { refresh() }, [groupId])
 
-  // Roster = group owner ∪ stored members[] ∪ join-comment authors.
-  const effectiveMembers = useMemo(() => {
-    if (!handle) return []
-    const set = new Set<string>([handle.ledger.owner, ...handle.ledger.members])
-    if (comments) for (const j of comments.joins) set.add(j.author)
-    return Array.from(set)
-  }, [handle, comments])
-
-  // Events = ledger.events (owner-written via PATCH) ∪ comment events
-  // (anyone-written via comment). Sorted chronologically so the activity
-  // feed reads naturally; void/expense IDs are unique across sources so
-  // the existing void-targetId logic doesn't care about provenance.
-  const effectiveEvents = useMemo<Event[]>(() => {
-    if (!handle) return []
-    const fromComments = comments?.events.map(c => c.event) ?? []
-    return [...handle.ledger.events, ...fromComments]
-      .sort((a, b) => a.ts.localeCompare(b.ts))
-  }, [handle, comments])
-
+  // Once the roster is known, lazily seed the add-expense form. We avoid
+  // overwriting the user's in-progress edits — if `participants` is
+  // already populated, leave it alone.
   useEffect(() => {
-    if (effectiveMembers.length === 0) return
-    setParticipants(prev => prev.length ? prev : effectiveMembers)
-    setPayer(prev => effectiveMembers.includes(prev) ? prev : (handle?.ledger.owner ?? prev))
-  }, [effectiveMembers, handle])
+    if (!group) return
+    setParticipants(prev => prev.length ? prev : group.members)
+    setPayer(prev => group.members.includes(prev) ? prev : group.owner)
+  }, [group])
 
   const balances = useMemo(
-    () => handle ? computeBalances(effectiveEvents, effectiveMembers) : [],
-    [handle, effectiveEvents, effectiveMembers],
+    () => group ? computeBalances(group.events, group.members) : [],
+    [group],
   )
   const transfers = useMemo(() => settle(balances), [balances])
   const maxBalance = useMemo(
@@ -85,43 +54,28 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
     [balances],
   )
 
-  if (!handle) {
+  if (!group) {
     return (
       <>
         {error && <div className="error"><span>{error}</span></div>}
-        {!error && <p className="empty">Loading ledger…</p>}
+        {!error && <p className="empty">Loading group…</p>}
       </>
     )
   }
 
-  const ledger = handle.ledger
-  const isOwner = ledger.owner === me
-  const isMember = effectiveMembers.includes(me)
+  const isOwner = group.owner === me
+  const isMember = group.members.includes(me)
   const voided = new Set(
-    effectiveEvents.filter(e => e.type === 'void').map(e => (e as any).targetId),
+    group.events.filter(e => e.type === 'void').map(e => (e as any).targetId),
   )
-  const shareUrl = `${window.location.origin}/#/g/${gistId}`
+  const shareUrl = `${window.location.origin}/#/g/${group.id}`
 
   async function handleJoin() {
     setJoining(true)
     setError(null)
     try {
-      // Two writes — both essential and to different gists, so we can't
-      // bundle them. (1) join comment on the group's gist makes the user
-      // visible as a member to the owner + everyone else looking at the
-      // group; (2) recordJoin into the user's own index gist makes the
-      // group visible in their own Groups list later. If (2) fails we
-      // surface the error but the join is still effective on the group
-      // side — the user can re-trigger to retry the index update.
-      await postJoinComment(gistId)
-      await recordJoin({
-        gistId,
-        name: ledger.name,
-        currency: ledger.currency,
-        joinedAt: new Date().toISOString(),
-      })
-      const c = await listGroupComments(gistId)
-      setComments(c)
+      await joinGroup(group!.id)
+      await refresh()
     } catch (err: any) {
       setError(err?.message || 'Failed to join group')
     } finally {
@@ -129,14 +83,10 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
     }
   }
 
-  // Owner writes events directly to the gist body (single source of
-  // truth, compact). Non-owner writes events as comments on the gist
-  // (the only thing they have permission to write). Both surface in
-  // effectiveEvents via the same merge.
   async function addExpense(e: React.FormEvent) {
     e.preventDefault()
-    if (!handle) return
-    const amount = parseAmount(amountStr, ledger.currency)
+    if (!group) return
+    const amount = parseAmount(amountStr, group.currency)
     if (!Number.isFinite(amount) || amount <= 0) {
       setError('Amount must be a positive number')
       return
@@ -148,57 +98,32 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
     setBusy(true)
     setError(null)
     try {
-      const event = makeExpense({
-        author: me,
+      await postEvent(group.id, makeExpense({
         payer,
         amount,
         participants,
         split: 'equal',
         note: note.trim() || undefined,
-      })
-      if (isOwner) {
-        const next = await appendEvents(handle, [event])
-        setHandle(next)
-      } else {
-        await postEventComment(gistId, event)
-        const c = await listGroupComments(gistId)
-        setComments(c)
-      }
+      }))
+      await refresh()
       setAmountStr('')
       setNote('')
     } catch (err: any) {
-      if (err instanceof ConflictError) {
-        setHandle(err.latest)
-        setError('Ledger changed elsewhere — your view is now refreshed. Try again.')
-      } else {
-        setError(err?.message || 'Failed to save')
-      }
+      setError(err?.message || 'Failed to save')
     } finally {
       setBusy(false)
     }
   }
 
   async function voidEvent(targetId: string) {
-    if (!handle) return
+    if (!group) return
     setBusy(true)
     setError(null)
     try {
-      const v = makeVoid({ author: me, targetId })
-      if (isOwner) {
-        const next = await appendEvents(handle, [v])
-        setHandle(next)
-      } else {
-        await postEventComment(gistId, v)
-        const c = await listGroupComments(gistId)
-        setComments(c)
-      }
+      await postEvent(group.id, makeVoid({ targetId }))
+      await refresh()
     } catch (err: any) {
-      if (err instanceof ConflictError) {
-        setHandle(err.latest)
-        setError('Ledger changed elsewhere — view refreshed.')
-      } else {
-        setError(err?.message || 'Failed to void')
-      }
+      setError(err?.message || 'Failed to void')
     } finally {
       setBusy(false)
     }
@@ -228,16 +153,16 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
       )}
 
       <div className="card group-header">
-        <h2>{ledger.name}</h2>
+        <h2>{group.name}</h2>
         <div className="group-header-meta">
-          <span>{ledger.currency}</span>
+          <span>{group.currency}</span>
           <span className="dot" />
-          <span>owner <strong>{ledger.owner}</strong></span>
+          <span>owner <strong>{group.owner}</strong></span>
           <span className="dot" />
-          <span>{effectiveMembers.length} member{effectiveMembers.length === 1 ? '' : 's'}</span>
+          <span>{group.members.length} member{group.members.length === 1 ? '' : 's'}</span>
         </div>
         <div className="chip-row" style={{ marginBottom: 14 }}>
-          {effectiveMembers.map(m => (
+          {group.members.map(m => (
             <span key={m} className="member-chip">
               <img src={avatarUrl(m, 36)} alt="" />
               {m}
@@ -299,14 +224,14 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
           <form onSubmit={addExpense} className="form-stack">
             <div className="row">
               <select value={payer} onChange={e => setPayer(e.target.value)}>
-                {effectiveMembers.map(m => (
+                {group.members.map(m => (
                   <option key={m} value={m}>{m} paid</option>
                 ))}
               </select>
               <input
                 className="amount"
                 inputMode="decimal"
-                placeholder={`Amount (${ledger.currency})`}
+                placeholder={`Amount (${group.currency})`}
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
               />
@@ -319,7 +244,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
             <div>
               <span className="field-label">Split equally among</span>
               <div className="chip-row">
-                {effectiveMembers.map(m => (
+                {group.members.map(m => (
                   <label key={m} className="check-pill">
                     <input
                       type="checkbox"
@@ -371,7 +296,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
                       )}
                     </div>
                     <span className={`balance-amount ${sign}`}>
-                      {b.balance > 0 ? '+' : ''}{formatAmount(b.balance, ledger.currency)}
+                      {b.balance > 0 ? '+' : ''}{formatAmount(b.balance, group.currency)}
                     </span>
                   </div>
                 )
@@ -391,7 +316,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
                       <img src={avatarUrl(t.to, 36)} alt="" />
                       {t.to}
                     </span>
-                    <span className="transfer-amount">{formatAmount(t.amount, ledger.currency)}</span>
+                    <span className="transfer-amount">{formatAmount(t.amount, group.currency)}</span>
                   </div>
                 ))}
               </>
@@ -403,10 +328,10 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
       <div className="card">
         <div className="section-head">
           <h3 className="section-title">Activity</h3>
-          <span className="section-count">{effectiveEvents.length}</span>
+          <span className="section-count">{group.events.length}</span>
         </div>
-        {effectiveEvents.length === 0 && <p className="empty">No events yet.</p>}
-        {[...effectiveEvents].reverse().map(e => {
+        {group.events.length === 0 && <p className="empty">No events yet.</p>}
+        {[...group.events].reverse().map(e => {
           if (e.type === 'void') {
             return (
               <div key={e.id} className="event">
@@ -421,9 +346,9 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
             )
           }
           const isVoided = voided.has(e.id)
-          // A user can void: their own events always; the owner can
-          // void anything. Non-owner can't reach into events someone
-          // else recorded.
+          // Owner can void anything; otherwise members can only void
+          // events they themselves authored. Server enforces; this is
+          // just the affordance.
           const canVoid = (isOwner || e.author === me) && !isVoided
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
@@ -436,7 +361,7 @@ export default function Group({ gistId, me }: { gistId: string; me: string }) {
                   split among {e.participants.join(', ')} · {fmtDate(e.ts)}
                 </p>
               </div>
-              <span className="event-amount">{formatAmount(e.amount, ledger.currency)}</span>
+              <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
               {canVoid && (
                 <button
                   className="danger-ghost"
