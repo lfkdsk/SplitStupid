@@ -1,7 +1,7 @@
 # SplitStupid
 
 A Splitwise-shaped expense ledger that lives in a GitHub Gist. No
-backend, no database — every group is one secret gist owned by the
+backend, no database — every group is one public gist owned by the
 group's organiser, members are just GitHub logins, and the URL is the
 share link.
 
@@ -22,7 +22,7 @@ share link.
         api.github.com/gists/…                     ← one gist per group
 ```
 
-Each group is a single secret Gist whose `ledger.json` looks like:
+Each group is a single public Gist whose `ledger.json` looks like:
 
 ```json
 {
@@ -57,18 +57,30 @@ event list every render — pure function, zero state.
   POST gist comments containing `splitstupid-event` JSON blocks; the
   owner periodically compacts those into `ledger.json`. Not wired into
   the UI yet.)
-- **Viewer**: anyone with the (secret) gist URL who isn't in the member
-  list. Renders fine; can't mutate.
+- **Viewer**: any signed-in GitHub user with the gist URL who isn't in
+  the member list. Renders fine; can't mutate.
 
 Identity comes from the OAuth token (`/user.login`), so authorship
 inside the file is trustworthy as far as GitHub's account boundary goes.
 
 ## Privacy
 
-Secret gists are **unlisted, not access-controlled**. The URL is the
-capability — anyone with the link can read. That's fine for "friends
-splitting dinner" but not for sensitive ledgers; bolt on client-side
-encryption (key in URL fragment) if you need real privacy.
+We use **public** gists, not secret ones. Counterintuitive but
+necessary: GitHub's REST API only lets the gist's owner read a secret
+gist (`GET /gists/{id}` 404s for everyone else, even if they have the
+id). For a friend who scans the share QR to actually load the ledger,
+the gist has to be public.
+
+The trade-off: public gists are listed on the owner's profile at
+`gist.github.com/<owner>` — a casual visitor can see "this user has
+expense groups". The contents of any specific group are still gated
+on knowing the gist id (random, unguessable) — the share URL hash is
+still the access capability for direct loads. Treat the discoverable
+*existence* as the privacy cost.
+
+Not for sensitive ledgers. Bolt on client-side encryption (key in URL
+fragment) if you need real privacy — the structure stays the same;
+only the `events` payload becomes ciphertext.
 
 ## Develop
 

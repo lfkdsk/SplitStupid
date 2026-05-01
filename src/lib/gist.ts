@@ -78,8 +78,23 @@ export async function createLedger(opts: {
   }
   const { data } = await getClient().gists.create({
     description: `${DESCRIPTION_PREFIX} ${opts.name}`,
-    // `public: false` = "secret" gist (unlisted, URL-as-capability).
-    public: false,
+    // public: true is intentional — counterintuitive but necessary.
+    // GitHub's REST API restricts secret gists to owner-only reads
+    // (`GET /gists/{id}` returns 404 to anyone else, even with the
+    // gist id). That kills the join flow: a friend who scans the
+    // share QR can't load the ledger to render it. Going public
+    // makes `gists.get` and `gists.listComments` work for any
+    // authenticated user — at the cost of the gist appearing on the
+    // owner's gist.github.com profile. The share URL hash is still
+    // random/unguessable; the trade is "completely hidden from
+    // browsing" → "discoverable on owner's profile, contents
+    // accessible to anyone with the URL". Acceptable for the casual
+    // friend-AA use case this app targets.
+    //
+    // Note: gist visibility is immutable — a gist created secret can
+    // never be flipped to public. Pre-public groups are stranded as
+    // owner-only and need to be recreated by the owner.
+    public: true,
     files: { [LEDGER_FILENAME]: { content: serialize(ledger) } },
   })
   return {
