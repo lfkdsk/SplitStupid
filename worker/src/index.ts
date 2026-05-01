@@ -119,10 +119,15 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     }
 
     if (rest === 'join' && method === 'POST') return await joinGroup(env, me, groupId)
-    if (rest === 'leave' && method === 'POST') return await leaveGroup(env, me, groupId)
 
     if (rest === 'events' && method === 'POST') {
       return await postEvent(env, me, groupId, await request.json())
+    }
+
+    // /groups/:id/members/:login
+    const memberMatch = rest.match(/^members\/([^/]+)$/)
+    if (memberMatch && method === 'DELETE') {
+      return await removeMember(env, me, groupId, decodeURIComponent(memberMatch[1]))
     }
   }
 
@@ -344,20 +349,40 @@ async function joinGroup(env: Env, me: string, id: string): Promise<Response> {
   return json({ ok: true })
 }
 
-// POST /groups/:id/leave — owner can't leave (would orphan the group);
-// they must DELETE instead.
-async function leaveGroup(env: Env, me: string, id: string): Promise<Response> {
+// DELETE /groups/:id/members/:login — both "owner kicks member" and
+// "joiner self-leaves" funnel through here. Permission matrix:
+//
+//   target == owner          → 403 always (must DELETE the group)
+//   target == me             → OK (self-leave; owner ruled out above)
+//   target != me, me == owner → OK (kick)
+//   target != me, me != owner → 403 (only owner can kick others)
+//
+// Past events authored by the removed login stay intact — settlement
+// for them still reflects in the activity feed and balance map. The
+// frontend's settlement view derives its roster from members ∪ event
+// participants so kicked-but-historical members keep showing up.
+async function removeMember(env: Env, me: string, id: string, target: string): Promise<Response> {
   const group = await env.DB.prepare(
     `SELECT owner_login FROM groups WHERE id = ?`,
   ).bind(id).first<{ owner_login: string }>()
   if (!group) return json({ error: 'group not found' }, 404)
-  if (group.owner_login === me) {
-    return json({ error: 'owner cannot leave; delete the group instead' }, 400)
+
+  if (target === group.owner_login) {
+    return json({ error: 'owner cannot be removed; delete the group instead' }, 400)
+  }
+  if (target !== me && me !== group.owner_login) {
+    return json({ error: 'only the group owner can remove other members' }, 403)
   }
 
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `DELETE FROM members WHERE group_id = ? AND login = ?`,
-  ).bind(id, me).run()
+  ).bind(id, target).run()
+
+  // D1 returns meta.changes for affected rows. If it's 0 the member
+  // wasn't there to begin with — return idempotently rather than 404
+  // so the UI's optimistic-remove flow doesn't have to special-case
+  // double-clicks.
+  void result
 
   return json({ ok: true })
 }

@@ -57,8 +57,14 @@ export const deleteGroup = (id: string): Promise<void> =>
 export const joinGroup = (id: string): Promise<{ ok: true }> =>
   call<{ ok: true }>(`/groups/${encodeURIComponent(id)}/join`, { method: 'POST' })
 
-export const leaveGroup = (id: string): Promise<{ ok: true }> =>
-  call<{ ok: true }>(`/groups/${encodeURIComponent(id)}/leave`, { method: 'POST' })
+// Remove a member from a group. Used both for owner-kicks-someone and
+// for member-leaves-self (call with login=me). The Worker enforces
+// the permission matrix server-side.
+export const removeMember = (groupId: string, login: string): Promise<{ ok: true }> =>
+  call<{ ok: true }>(
+    `/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(login)}`,
+    { method: 'DELETE' },
+  )
 
 // ---------------------------------------------------------------------------
 // Events

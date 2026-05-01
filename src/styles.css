@@ -393,6 +393,33 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   border-radius: 50%;
 }
 
+/* × on chips: owner kicks, self leaves. Reset the global button
+   styles since chips embed it. */
+.member-chip .chip-remove {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin-left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--fg-subtle);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.member-chip .chip-remove:hover:not(:disabled) {
+  background: var(--negative-bg);
+  color: var(--negative);
+  transform: none;
+  box-shadow: none;
+}
+
 /* Toggleable participant pills */
 .check-pill {
   display: inline-flex;

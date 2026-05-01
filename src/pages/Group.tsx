@@ -6,6 +6,7 @@ import {
   makeVoid,
   postEvent,
   readGroup,
+  removeMember,
 } from '../lib/api'
 import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settle'
 import { avatarUrl } from '../lib/avatar'
@@ -44,9 +45,26 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     setParticipants(prev => prev.length ? prev : group.members)
   }, [group])
 
+  // Settlement roster includes everyone who shows up in any event,
+  // not just the *current* members list. That way a member who paid
+  // for stuff and then got kicked / left still gets a balance row +
+  // any "owe-them" transfer line — past activity isn't erased by
+  // present membership state.
+  const settlementRoster = useMemo(() => {
+    if (!group) return []
+    const set = new Set<string>(group.members)
+    for (const e of group.events) {
+      if (e.type === 'expense') {
+        set.add(e.payer)
+        for (const p of e.participants) set.add(p)
+      }
+    }
+    return Array.from(set)
+  }, [group])
+
   const balances = useMemo(
-    () => group ? computeBalances(group.events, group.members) : [],
-    [group],
+    () => group ? computeBalances(group.events, settlementRoster) : [],
+    [group, settlementRoster],
   )
   const transfers = useMemo(() => settle(balances), [balances])
   const maxBalance = useMemo(
@@ -80,6 +98,35 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       setError(err?.message || 'Failed to join group')
     } finally {
       setJoining(false)
+    }
+  }
+
+  // Either an owner kicking another member, or a non-owner self-leaving
+  // from the chip's × button. Same endpoint, server enforces who's
+  // allowed to do what. On self-leave we bounce back to the list since
+  // the user no longer has visibility into this group.
+  async function handleRemoveMember(login: string) {
+    if (!group) return
+    const isSelf = login === me
+    const ok = window.confirm(
+      isSelf
+        ? `Leave "${group.name}"? You can rejoin from the share link.`
+        : `Remove ${login} from "${group.name}"? Their past expenses stay in the ledger; they just can't record new ones.`,
+    )
+    if (!ok) return
+    setBusy(true)
+    setError(null)
+    try {
+      await removeMember(group.id, login)
+      if (isSelf) {
+        window.location.hash = '#/'
+      } else {
+        await refresh()
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to remove member')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -162,12 +209,34 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           <span>{group.members.length} member{group.members.length === 1 ? '' : 's'}</span>
         </div>
         <div className="chip-row" style={{ marginBottom: 14 }}>
-          {group.members.map(m => (
-            <span key={m} className="member-chip">
-              <img src={avatarUrl(m, 36)} alt="" />
-              {m}
-            </span>
-          ))}
+          {group.members.map(m => {
+            // Owner's chip is permanent — to dispose of the group they
+            // have to delete it outright. Otherwise:
+            //   - Owner viewing a member's chip → × kicks them.
+            //   - Member viewing their own chip → × is a self-leave.
+            //   - Member viewing another member's chip → no × (server
+            //     would 403 anyway, but no point teasing it).
+            const isOwnerChip = m === group.owner
+            const canRemove = !isOwnerChip && (isOwner || m === me)
+            return (
+              <span key={m} className="member-chip">
+                <img src={avatarUrl(m, 36)} alt="" />
+                {m}
+                {canRemove && (
+                  <button
+                    type="button"
+                    className="chip-remove"
+                    onClick={() => handleRemoveMember(m)}
+                    disabled={busy}
+                    aria-label={m === me ? 'Leave group' : `Remove ${m}`}
+                    title={m === me ? 'Leave group' : `Remove ${m}`}
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
+            )
+          })}
         </div>
         <div className="row" style={{ gap: 8 }}>
           <button

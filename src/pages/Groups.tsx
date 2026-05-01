@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createGroup, deleteGroup, leaveGroup, listGroups } from '../lib/api'
+import { createGroup, deleteGroup, listGroups, removeMember } from '../lib/api'
 import type { GroupSummary } from '../types'
 import { avatarUrl } from '../lib/avatar'
 
@@ -47,7 +47,7 @@ export default function Groups({ me }: { me: string }) {
     setError(null)
     try {
       if (isOwned) await deleteGroup(g.id)
-      else await leaveGroup(g.id)
+      else await removeMember(g.id, me)
       setGroups(prev => prev ? prev.filter(x => x.id !== g.id) : prev)
     } catch (err: any) {
       setError(err?.message || (isOwned ? 'Failed to delete' : 'Failed to leave'))
@@ -55,8 +55,6 @@ export default function Groups({ me }: { me: string }) {
       setRemoving(null)
     }
   }
-
-  void me
 
   return (
     <>
