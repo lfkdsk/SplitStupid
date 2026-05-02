@@ -130,8 +130,7 @@ a:hover {
 }
 .brand:hover { border-bottom: 0; }
 
-/* Stamped square mark — ink fill, italic serif "S" cream, cinnabar
-   slash cutting across to literalize the "split". */
+/* Stamped square mark — ink fill, italic serif "S" cream. */
 .brand-mark {
   width: 30px;
   height: 30px;
@@ -148,21 +147,6 @@ a:hover {
   letter-spacing: -0.04em;
   flex-shrink: 0;
   line-height: 1;
-  position: relative;
-  overflow: hidden;
-}
-.brand-mark::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to top right,
-    transparent calc(50% - 1px),
-    var(--accent) calc(50% - 1px),
-    var(--accent) calc(50% + 1px),
-    transparent calc(50% + 1px)
-  );
-  pointer-events: none;
 }
 .brand-mark::after { content: 'S'; transform: translateY(-1px); }
 
