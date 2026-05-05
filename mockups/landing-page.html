@@ -1,0 +1,1452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SplitStupid · Landing Page Mockup</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,600;1,9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Palette mirrored from src/styles.css */
+  :root {
+    --bg: #faf6ef;
+    --bg-elevated: #ffffff;
+    --bg-subtle: #f3ece0;
+    --fg: #1a1410;
+    --fg-muted: #6f6356;
+    --fg-subtle: #a89c8b;
+    --border: rgba(26, 20, 16, 0.10);
+    --border-strong: rgba(26, 20, 16, 0.22);
+    --accent: #c2410c;
+    --accent-hover: #9a3412;
+    --accent-bg: rgba(194, 65, 12, 0.08);
+    --accent-fg: #fff8f1;
+    --positive: #3f6212;
+    --positive-bg: rgba(63, 98, 18, 0.10);
+    --negative: #9f1239;
+    --negative-bg: rgba(159, 18, 57, 0.08);
+    --shadow-sm: 0 1px 2px 0 rgba(26, 20, 16, 0.05);
+    --shadow-md: 0 6px 20px -8px rgba(26, 20, 16, 0.18), 0 2px 4px -2px rgba(26, 20, 16, 0.06);
+    --shadow-lg: 0 18px 40px -12px rgba(26, 20, 16, 0.20);
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-full: 9999px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-display: 'Fraunces', 'Source Serif Pro', Georgia, serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
+    line-height: 1.55;
+  }
+
+  /* ===== Shell ===== */
+  .stage {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  /* ===== Hero (compact) ===== */
+  .hero {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+  .logo {
+    width: 60px;
+    height: 60px;
+    border-radius: 13px;
+    background: var(--fg);
+    margin: 0 auto 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-style: italic;
+    font-size: 36px;
+    color: var(--bg);
+    letter-spacing: -0.06em;
+    box-shadow: 0 12px 36px rgba(26, 20, 16, 0.20);
+    line-height: 1;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    margin: 0 0 14px;
+  }
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: 42px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin: 0 0 18px;
+  }
+  .hero-title em {
+    font-style: italic;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .hero-lede {
+    color: var(--fg-muted);
+    font-size: 15px;
+    line-height: 1.65;
+    max-width: 460px;
+    margin: 0 auto 26px;
+  }
+  .hero-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 500;
+    background: var(--accent);
+    color: var(--accent-fg);
+    border: 1px solid transparent;
+    padding: 13px 22px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    text-decoration: none;
+    letter-spacing: -0.005em;
+    transition: transform 0.05s, background 0.15s, box-shadow 0.15s;
+  }
+  .hero-cta:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+  }
+  .hero-fineprint {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-subtle);
+    letter-spacing: 0.04em;
+    margin: 14px 0 0;
+  }
+
+  /* ===== Section title (small mono caps) ===== */
+  .section-rule {
+    text-align: center;
+    margin: 72px 0 28px;
+  }
+  .section-rule::before,
+  .section-rule::after {
+    content: '';
+    display: inline-block;
+    width: 28px;
+    height: 1px;
+    background: var(--border-strong);
+    vertical-align: middle;
+    margin: 0 12px;
+  }
+  .section-rule .section-title {
+    display: inline-block;
+    margin: 0;
+    vertical-align: middle;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+  }
+  .section-intro {
+    text-align: center;
+    color: var(--fg-muted);
+    font-size: 14px;
+    line-height: 1.65;
+    max-width: 480px;
+    margin: 0 auto 24px;
+  }
+  .section-intro h2 {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    margin: 0 0 8px;
+    line-height: 1.2;
+  }
+  .section-intro h2 em { font-style: italic; font-weight: 500; color: var(--accent); }
+
+  /* ===== Sample group card — promoted, larger ===== */
+  .sample-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 26px 28px;
+    box-shadow: var(--shadow-md);
+    position: relative;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+  .sample-card::before {
+    content: '';
+    position: absolute;
+    top: 22px;
+    right: 22px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--accent-bg);
+    z-index: 0;
+  }
+  .sample-card > * { position: relative; z-index: 1; }
+  .sample-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .sample-head h4 {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    margin: 0;
+    line-height: 1.1;
+  }
+  .sample-head .meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-subtle);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .sample-meta-row {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-subtle);
+    letter-spacing: 0.04em;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sample-meta-row .dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--fg-subtle);
+  }
+  .sample-meta-row strong { color: var(--fg); font-weight: 600; }
+
+  .sample-divider {
+    border: 0;
+    border-top: 1px dashed var(--border-strong);
+    margin: 18px 0;
+  }
+  .sample-row-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    margin: 0 0 14px;
+  }
+  .balance-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 96px;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+  .balance-row:last-child { margin-bottom: 0; }
+  .balance-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .balance-name .av {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg);
+    flex-shrink: 0;
+  }
+  .balance-bar {
+    position: relative;
+    height: 6px;
+    background: var(--bg-subtle);
+    border-radius: var(--radius-full);
+  }
+  .balance-bar-mid {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    left: 50%;
+    width: 1px;
+    background: var(--border-strong);
+  }
+  .balance-bar-fill { position: absolute; top: 0; bottom: 0; }
+  .balance-bar-fill.positive {
+    left: 50%;
+    background: var(--positive);
+    border-radius: 0 var(--radius-full) var(--radius-full) 0;
+  }
+  .balance-bar-fill.negative {
+    right: 50%;
+    background: var(--negative);
+    border-radius: var(--radius-full) 0 0 var(--radius-full);
+  }
+  .balance-amount {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-align: right;
+  }
+  .balance-amount.positive { color: var(--positive); }
+  .balance-amount.negative { color: var(--negative); }
+  .balance-amount.zero { color: var(--fg-subtle); font-weight: 500; }
+
+  .transfer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    background: var(--bg-subtle);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  .transfer:last-child { margin-bottom: 0; }
+  .transfer .av {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .transfer .name { font-weight: 500; }
+  .transfer .arrow {
+    font-family: var(--font-mono);
+    color: var(--fg-subtle);
+    font-size: 12px;
+  }
+  .transfer .amount {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  /* ===== Keepsake stage shared ===== */
+  .keepsake-stage {
+    margin-top: 12px;
+    padding: 38px 16px 28px;
+    background: linear-gradient(180deg,
+      rgba(26, 20, 16, 0.04) 0%,
+      rgba(26, 20, 16, 0.02) 60%,
+      rgba(26, 20, 16, 0.06) 100%);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    display: flex;
+    justify-content: center;
+  }
+  .keepsake-notes {
+    list-style: none;
+    margin: 22px auto 0;
+    padding: 0;
+    max-width: 540px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 20px;
+  }
+  .keepsake-notes li {
+    font-size: 13px;
+    color: var(--fg-muted);
+    line-height: 1.55;
+    padding-left: 14px;
+    position: relative;
+  }
+  .keepsake-notes li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 7px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .keepsake-notes b {
+    font-weight: 600;
+    color: var(--fg);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 14px;
+  }
+  @media (max-width: 540px) {
+    .keepsake-notes { grid-template-columns: 1fr; }
+  }
+
+  /* ===== Receipt — torn paper PNG mockup ===== */
+  .receipt-wrap {
+    width: 320px;
+    filter: drop-shadow(0 14px 28px rgba(26, 20, 16, 0.20))
+            drop-shadow(0 2px 4px rgba(26, 20, 16, 0.10));
+  }
+  .receipt {
+    width: 100%;
+    background: var(--bg);
+    padding: 24px 22px 20px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg);
+    position: relative;
+    /* Torn edges via clip-path zigzag, computed in JS to fit width. */
+  }
+  /* Subtle paper grain — scattered ink flecks. */
+  .receipt::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 12% 18%, rgba(26,20,16,.06) 0.5px, transparent 1px),
+      radial-gradient(circle at 73% 32%, rgba(26,20,16,.05) 0.5px, transparent 1px),
+      radial-gradient(circle at 28% 71%, rgba(26,20,16,.05) 0.5px, transparent 1px),
+      radial-gradient(circle at 88% 84%, rgba(26,20,16,.06) 0.5px, transparent 1px),
+      radial-gradient(circle at 45% 50%, rgba(26,20,16,.04) 0.5px, transparent 1px);
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  .receipt-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 4px;
+  }
+  .receipt-brand .mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: var(--fg);
+    color: var(--bg);
+    font-style: italic;
+    font-size: 14px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .receipt-tagline {
+    text-align: center;
+    font-size: 9px;
+    color: var(--fg-muted);
+    letter-spacing: 0.22em;
+    margin: 4px 0 14px;
+  }
+  .receipt-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-align: center;
+    color: var(--fg);
+    margin: 0 0 6px;
+    position: relative;
+  }
+  .receipt-stamp {
+    position: absolute;
+    top: -4px;
+    right: 4px;
+    transform: rotate(-7deg);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--accent);
+    border: 1.4px solid var(--accent);
+    padding: 2px 6px;
+    border-radius: 2px;
+    letter-spacing: 0.16em;
+    background: var(--bg-elevated);
+    opacity: 0.85;
+  }
+  .receipt-meta {
+    text-align: center;
+    font-size: 9px;
+    color: var(--fg-subtle);
+    letter-spacing: 0.06em;
+    margin: 0 0 16px;
+  }
+
+  .receipt-section-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0 10px;
+  }
+  .receipt-section-head::before,
+  .receipt-section-head::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--fg);
+  }
+  .receipt-section-head span {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--fg);
+    letter-spacing: 0.18em;
+  }
+  .receipt-sub {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    letter-spacing: 0.16em;
+    margin: 8px 0 6px;
+  }
+
+  .receipt-expense {
+    margin-bottom: 8px;
+  }
+  .receipt-expense-line {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .receipt-expense-amt {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .receipt-expense-note {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 10px;
+    color: var(--fg-muted);
+    margin: 1px 0 0;
+  }
+  .receipt-expense-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: var(--fg-subtle);
+    margin-top: 1px;
+  }
+
+  .receipt-dotted {
+    display: flex;
+    gap: 3px;
+    margin: 10px 0;
+  }
+  .receipt-dotted span {
+    width: 1.4px;
+    height: 1.4px;
+    border-radius: 50%;
+    background: var(--fg-subtle);
+  }
+
+  .receipt-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 4px 0;
+  }
+  .receipt-total-row .lbl {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    letter-spacing: 0.16em;
+  }
+  .receipt-total-row .val {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--fg);
+  }
+
+  .receipt-bal-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    margin: 3px 0;
+  }
+  .receipt-bal-row .nm { font-family: var(--font-sans); font-weight: 500; }
+  .receipt-bal-row .am {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .receipt-bal-row .am.pos { color: var(--positive); }
+  .receipt-bal-row .am.neg { color: var(--negative); }
+
+  .receipt-trans-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    margin: 4px 0;
+    font-weight: 500;
+  }
+  .receipt-trans-row::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .receipt-trans-row .am {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .receipt-thanks {
+    text-align: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 11px;
+    color: var(--fg-muted);
+    margin: 14px 0 10px;
+  }
+  .receipt-barcode {
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    gap: 1px;
+    height: 24px;
+    margin: 6px 0;
+  }
+  .receipt-barcode i {
+    display: block;
+    background: var(--fg);
+  }
+  .receipt-id {
+    text-align: center;
+    font-size: 9px;
+    color: var(--fg-subtle);
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+  }
+
+  /* ===== Postcard mockup ===== */
+  .postcard-wrap {
+    width: 100%;
+    max-width: 560px;
+    aspect-ratio: 720 / 460;
+    filter: drop-shadow(0 14px 32px rgba(26, 20, 16, 0.22))
+            drop-shadow(0 2px 4px rgba(26, 20, 16, 0.10));
+  }
+  .postcard {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+    padding: 5%;
+    container-type: inline-size;
+  }
+  /* Inner dashed border — postcard convention. */
+  .postcard::before {
+    content: '';
+    position: absolute;
+    inset: 2.1cqw;
+    border: 1px dashed rgba(26, 20, 16, 0.22);
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  /* Paper grain. */
+  .postcard::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 8% 12%, rgba(26,20,16,.06) 0.5px, transparent 1px),
+      radial-gradient(circle at 33% 28%, rgba(26,20,16,.05) 0.5px, transparent 1px),
+      radial-gradient(circle at 62% 18%, rgba(26,20,16,.05) 0.5px, transparent 1px),
+      radial-gradient(circle at 84% 41%, rgba(26,20,16,.06) 0.5px, transparent 1px),
+      radial-gradient(circle at 18% 62%, rgba(26,20,16,.05) 0.5px, transparent 1px),
+      radial-gradient(circle at 47% 78%, rgba(26,20,16,.06) 0.5px, transparent 1px),
+      radial-gradient(circle at 78% 88%, rgba(26,20,16,.05) 0.5px, transparent 1px);
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  .pc-brand {
+    position: absolute;
+    top: 7%;
+    left: 5.5%;
+    display: flex;
+    align-items: center;
+    gap: 1.8cqw;
+    z-index: 2;
+  }
+  .pc-brand .mk {
+    width: 5.4cqw;
+    height: 5.4cqw;
+    border-radius: 1.1cqw;
+    background: var(--fg);
+    color: var(--bg);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 700;
+    font-size: 3.4cqw;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .pc-brand .nm {
+    font-family: var(--font-display);
+    font-size: 2.7cqw;
+    font-weight: 600;
+    color: var(--fg);
+    line-height: 1.2;
+  }
+  .pc-brand .cap {
+    font-family: var(--font-mono);
+    font-size: 1.5cqw;
+    color: var(--fg-muted);
+    letter-spacing: 0.22em;
+    margin-top: 0.4cqw;
+  }
+  .pc-title {
+    position: absolute;
+    top: 25%;
+    left: 5.5%;
+    font-family: var(--font-display);
+    font-size: 7.9cqw;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1;
+    color: var(--fg);
+    z-index: 2;
+  }
+  .pc-subtitle {
+    position: absolute;
+    top: 41%;
+    left: 5.5%;
+    font-family: var(--font-mono);
+    font-size: 1.8cqw;
+    color: var(--fg-muted);
+    letter-spacing: 0.22em;
+    z-index: 2;
+  }
+  .pc-avatars {
+    position: absolute;
+    top: 50%;
+    left: 5.5%;
+    display: flex;
+    align-items: center;
+    gap: 1.8cqw;
+    z-index: 2;
+  }
+  .pc-avatars .av {
+    width: 5.7cqw;
+    height: 5.7cqw;
+    border-radius: 50%;
+    border: 1px solid rgba(26, 20, 16, 0.18);
+    background: var(--bg-subtle);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 700;
+    font-size: 2.9cqw;
+    color: var(--fg);
+  }
+  .pc-avatars .av.av-a { background: linear-gradient(135deg, #f1c597, #c2410c); color: #fff8f1; }
+  .pc-avatars .av.av-b { background: linear-gradient(135deg, #b8d49a, #3f6212); color: #fff8f1; }
+  .pc-avatars .av.av-c { background: linear-gradient(135deg, #cab5e0, #6b46c1); color: #fff8f1; }
+  .pc-avatars .av.av-d { background: linear-gradient(135deg, #e8b3b3, #9f1239); color: #fff8f1; }
+  .pc-avatars .roster {
+    margin-left: 1.1cqw;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 2.5cqw;
+    color: var(--fg-muted);
+  }
+
+  .pc-postmark {
+    position: absolute;
+    top: 18%;
+    right: 8%;
+    width: 23.5cqw;
+    height: 23.5cqw;
+    transform: rotate(8deg);
+    z-index: 2;
+    color: var(--accent);
+  }
+  .pc-postmark .ring-outer {
+    position: absolute;
+    inset: 0;
+    border: 0.45cqw dashed var(--accent);
+    border-radius: 50%;
+  }
+  .pc-postmark .ring-mid {
+    position: absolute;
+    inset: 2.1cqw;
+    border: 0.21cqw solid var(--accent);
+    border-radius: 50%;
+  }
+  .pc-postmark .ring-inner {
+    position: absolute;
+    inset: 3.4cqw;
+    border: 0.11cqw solid var(--accent);
+    border-radius: 50%;
+    opacity: 0.5;
+  }
+  .pc-postmark .top-arc {
+    position: absolute;
+    top: 3.9cqw;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 1.6cqw;
+    font-weight: 700;
+    letter-spacing: 0.32em;
+    color: var(--accent);
+  }
+  .pc-postmark .center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 700;
+    font-size: 5.4cqw;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .pc-postmark .bot-arc {
+    position: absolute;
+    bottom: 3.9cqw;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 1.5cqw;
+    font-weight: 500;
+    letter-spacing: 0.28em;
+    color: var(--accent);
+  }
+
+  .pc-total {
+    position: absolute;
+    bottom: 8%;
+    right: 5.5%;
+    text-align: right;
+    z-index: 2;
+  }
+  .pc-total .lbl {
+    font-family: var(--font-mono);
+    font-size: 1.6cqw;
+    color: var(--fg-muted);
+    letter-spacing: 0.28em;
+    margin-bottom: 1.1cqw;
+  }
+  .pc-total .num {
+    font-family: var(--font-display);
+    font-size: 6.8cqw;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .pc-total .per {
+    font-family: var(--font-mono);
+    font-size: 1.8cqw;
+    color: var(--fg-muted);
+    margin-top: 1.4cqw;
+    letter-spacing: 0.04em;
+  }
+
+  .pc-tagline {
+    position: absolute;
+    bottom: 8%;
+    left: 5.5%;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 2.9cqw;
+    color: var(--fg-muted);
+    z-index: 2;
+  }
+  .pc-final-stamp {
+    position: absolute;
+    bottom: 18%;
+    left: 5.5%;
+    transform: rotate(-6deg);
+    font-family: var(--font-mono);
+    font-size: 2cqw;
+    font-weight: 700;
+    color: var(--positive);
+    border: 0.25cqw solid var(--positive);
+    padding: 0.7cqw 1.8cqw;
+    border-radius: 2px;
+    letter-spacing: 0.18em;
+    background: rgba(255, 255, 255, 0.45);
+    z-index: 2;
+  }
+
+  /* ===== How it works (compact, after the visuals) ===== */
+  .steps {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 18px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .step {
+    text-align: center;
+    padding: 0 4px;
+  }
+  .step-num {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    margin-bottom: 8px;
+  }
+  .step h3 {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    margin: 0 0 4px;
+  }
+  .step p {
+    color: var(--fg-muted);
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  @media (max-width: 540px) {
+    .steps { grid-template-columns: 1fr; gap: 22px; }
+  }
+
+  /* ===== Why card grid ===== */
+  .why-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .why {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+  }
+  .why .why-mark {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+  .why h4 {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .why p {
+    color: var(--fg-muted);
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  @media (max-width: 540px) {
+    .why-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ===== Footer CTA ===== */
+  .footer-cta {
+    text-align: center;
+    margin-top: 72px;
+    padding-top: 42px;
+    border-top: 1px dashed var(--border-strong);
+  }
+  .footer-cta h3 {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 26px;
+    font-weight: 500;
+    margin: 0 0 18px;
+    letter-spacing: -0.015em;
+    color: var(--fg);
+  }
+  .footer-foot {
+    text-align: center;
+    margin-top: 28px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-subtle);
+    letter-spacing: 0.04em;
+  }
+  .footer-foot a { color: var(--fg-muted); border-bottom: 1px dashed transparent; text-decoration: none; }
+  .footer-foot a:hover { border-bottom-color: var(--fg-muted); }
+
+  /* ===== Dark mode ===== */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15110d;
+      --bg-elevated: #1f1a14;
+      --bg-subtle: #2a241c;
+      --fg: #f4ede1;
+      --fg-muted: #a89c8b;
+      --fg-subtle: #6f6356;
+      --border: rgba(244, 237, 225, 0.10);
+      --border-strong: rgba(244, 237, 225, 0.22);
+      --accent: #fb923c;
+      --accent-hover: #fdba74;
+      --accent-bg: rgba(251, 146, 60, 0.14);
+      --accent-fg: #15110d;
+      --positive: #a3e635;
+      --positive-bg: rgba(163, 230, 53, 0.14);
+      --negative: #fda4af;
+      --negative-bg: rgba(253, 164, 175, 0.14);
+    }
+    .pc-final-stamp { background: rgba(0,0,0,0.25); }
+  }
+</style>
+</head>
+<body>
+  <main class="stage">
+    <!-- ========================= HERO ========================= -->
+    <section class="hero">
+      <div class="logo">S</div>
+      <p class="eyebrow">A small expense ledger</p>
+      <h1 class="hero-title">Keep the ledger,<br><em>keep the friendship.</em></h1>
+      <p class="hero-lede">
+        Track who paid for what on trips, dinners, and shared bills.
+        SplitStupid does the math, names the transfers, and stays out of your way.
+      </p>
+      <a class="hero-cta" href="#">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        Sign in with GitHub
+      </a>
+      <p class="hero-fineprint">No new account · Free · Open source</p>
+    </section>
+
+    <!-- ========================= THE GLANCE — promoted ========================= -->
+    <div class="section-rule"><span class="section-title">A live group</span></div>
+    <div class="section-intro">
+      <h2>This is what it <em>looks like.</em></h2>
+      <p>Balances update as you log. Suggested transfers reduce settling to the fewest payments needed.</p>
+    </div>
+
+    <div class="sample-card">
+      <div class="sample-head">
+        <h4>Kyoto, April</h4>
+        <span class="meta">No. zKx9p</span>
+      </div>
+      <div class="sample-meta-row">
+        <span><strong>4</strong> people</span>
+        <span class="dot"></span>
+        <span><strong>11</strong> expenses</span>
+        <span class="dot"></span>
+        <span>JPY · since Apr 4</span>
+      </div>
+
+      <p class="sample-row-label">Per-member balance</p>
+      <div class="balance-row">
+        <span class="balance-name"><span class="av">A</span>alice</span>
+        <div class="balance-bar">
+          <div class="balance-bar-mid"></div>
+          <div class="balance-bar-fill positive" style="width: 42%;"></div>
+        </div>
+        <span class="balance-amount positive">+ ¥18,400</span>
+      </div>
+      <div class="balance-row">
+        <span class="balance-name"><span class="av">B</span>ben</span>
+        <div class="balance-bar">
+          <div class="balance-bar-mid"></div>
+          <div class="balance-bar-fill positive" style="width: 9%;"></div>
+        </div>
+        <span class="balance-amount positive">+ ¥3,800</span>
+      </div>
+      <div class="balance-row">
+        <span class="balance-name"><span class="av">C</span>cara</span>
+        <div class="balance-bar">
+          <div class="balance-bar-mid"></div>
+          <div class="balance-bar-fill negative" style="width: 28%;"></div>
+        </div>
+        <span class="balance-amount negative">− ¥12,100</span>
+      </div>
+      <div class="balance-row">
+        <span class="balance-name"><span class="av">D</span>dan</span>
+        <div class="balance-bar">
+          <div class="balance-bar-mid"></div>
+          <div class="balance-bar-fill negative" style="width: 24%;"></div>
+        </div>
+        <span class="balance-amount negative">− ¥10,100</span>
+      </div>
+
+      <hr class="sample-divider">
+
+      <p class="sample-row-label">Suggested transfers</p>
+      <div class="transfer">
+        <span class="balance-name"><span class="av">C</span><span class="name">cara</span></span>
+        <span class="arrow">→</span>
+        <span class="balance-name"><span class="av">A</span><span class="name">alice</span></span>
+        <span class="amount">¥12,100</span>
+      </div>
+      <div class="transfer">
+        <span class="balance-name"><span class="av">D</span><span class="name">dan</span></span>
+        <span class="arrow">→</span>
+        <span class="balance-name"><span class="av">A</span><span class="name">alice</span></span>
+        <span class="amount">¥6,300</span>
+      </div>
+      <div class="transfer">
+        <span class="balance-name"><span class="av">D</span><span class="name">dan</span></span>
+        <span class="arrow">→</span>
+        <span class="balance-name"><span class="av">B</span><span class="name">ben</span></span>
+        <span class="amount">¥3,800</span>
+      </div>
+    </div>
+
+    <!-- ========================= TWO KEEPSAKES ========================= -->
+    <div class="section-rule"><span class="section-title">Two keepsakes</span></div>
+    <div class="section-intro">
+      <h2>When it's done, <em>print it on paper.</em></h2>
+      <p>Finalize a trip to freeze the books — then export one of two share-friendly PNGs, hand-drawn on a 2D canvas so they look the same on every phone.</p>
+    </div>
+
+    <!-- RECEIPT -->
+    <div class="keepsake-stage">
+      <div class="receipt-wrap">
+        <div class="receipt" id="receipt-paper">
+          <div class="receipt-brand">
+            <span class="mark">S</span>
+            <span>SplitStupid</span>
+          </div>
+          <p class="receipt-tagline">— RECEIPT —</p>
+
+          <h4 class="receipt-title">
+            Kyoto, April
+            <span class="receipt-stamp">FINALIZED</span>
+          </h4>
+          <p class="receipt-meta">JPY · 2026-04-12 · No. zKx9p</p>
+
+          <div class="receipt-section-head"><span>EXPENSES</span></div>
+
+          <div class="receipt-expense">
+            <div class="receipt-expense-line">
+              <span>alice paid</span>
+              <span class="receipt-expense-amt">¥24,000</span>
+            </div>
+            <p class="receipt-expense-note">"sushi dinner — Pontocho"</p>
+            <div class="receipt-expense-meta">
+              <span>split among alice, ben, cara, dan</span>
+              <span>2026-04-08</span>
+            </div>
+          </div>
+
+          <div class="receipt-expense">
+            <div class="receipt-expense-line">
+              <span>alice paid</span>
+              <span class="receipt-expense-amt">¥18,200</span>
+            </div>
+            <p class="receipt-expense-note">"ryokan deposit"</p>
+            <div class="receipt-expense-meta">
+              <span>split among alice, ben, cara, dan</span>
+              <span>2026-04-04</span>
+            </div>
+          </div>
+
+          <div class="receipt-expense">
+            <div class="receipt-expense-line">
+              <span>ben paid</span>
+              <span class="receipt-expense-amt">¥6,400</span>
+            </div>
+            <p class="receipt-expense-note">"taxi to Arashiyama"</p>
+            <div class="receipt-expense-meta">
+              <span>split among ben, cara, dan</span>
+              <span>2026-04-09</span>
+            </div>
+          </div>
+
+          <div class="receipt-dotted">
+            <!-- dots -->
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+
+          <div class="receipt-total-row">
+            <span class="lbl">TOTAL</span>
+            <span class="val">¥48,600</span>
+          </div>
+
+          <div class="receipt-section-head"><span>SETTLEMENT</span></div>
+
+          <p class="receipt-sub">PER-MEMBER BALANCE</p>
+          <div class="receipt-bal-row"><span class="nm">alice</span><span class="am pos">+¥18,400</span></div>
+          <div class="receipt-bal-row"><span class="nm">ben</span><span class="am pos">+¥3,800</span></div>
+          <div class="receipt-bal-row"><span class="nm">cara</span><span class="am neg">−¥12,100</span></div>
+          <div class="receipt-bal-row"><span class="nm">dan</span><span class="am neg">−¥10,100</span></div>
+
+          <p class="receipt-sub" style="margin-top: 12px;">SUGGESTED TRANSFERS</p>
+          <div class="receipt-trans-row">cara &nbsp;→&nbsp; alice <span class="am">¥12,100</span></div>
+          <div class="receipt-trans-row">dan &nbsp;→&nbsp; alice <span class="am">¥6,300</span></div>
+          <div class="receipt-trans-row">dan &nbsp;→&nbsp; ben <span class="am">¥3,800</span></div>
+
+          <div class="receipt-dotted" style="margin-top: 14px;">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+
+          <p class="receipt-thanks">Thank you for splitting stupid.</p>
+          <div class="receipt-barcode" id="barcode"></div>
+          <p class="receipt-id">g/zKx9p · 2026-04-12</p>
+        </div>
+      </div>
+    </div>
+    <ul class="keepsake-notes">
+      <li><b>Torn edges</b> — sawtooth top &amp; bottom, clipped from the canvas itself, not faked with images.</li>
+      <li><b>Per-group barcode</b> — the bars are random, but seeded by group id so the same trip always renders identically.</li>
+      <li><b>"FINALIZED" stamp</b> tilts -7°, sits in cinnabar over the title corner — the same metaphor as the in-app banner.</li>
+      <li><b>"Thank you for splitting stupid."</b> — a gentle riff on the supermarket footer, in italic Fraunces.</li>
+    </ul>
+
+    <!-- POSTCARD -->
+    <div style="height: 56px;"></div>
+    <div class="keepsake-stage">
+      <div class="postcard-wrap">
+        <div class="postcard">
+          <!-- top-left brand block -->
+          <div class="pc-brand">
+            <span class="mk">S</span>
+            <span>
+              <span class="nm">SplitStupid</span>
+              <div class="cap">— TRIP POSTCARD —</div>
+            </span>
+          </div>
+
+          <h2 class="pc-title">Kyoto, April</h2>
+          <p class="pc-subtitle">APR 4 — 12, 2026 &nbsp;·&nbsp; 4 SPLITTERS</p>
+
+          <div class="pc-avatars">
+            <span class="av av-a">A</span>
+            <span class="av av-b">B</span>
+            <span class="av av-c">C</span>
+            <span class="av av-d">D</span>
+            <span class="roster">alice · ben · cara · dan</span>
+          </div>
+
+          <!-- top-right cinnabar postmark -->
+          <div class="pc-postmark">
+            <div class="ring-outer"></div>
+            <div class="ring-mid"></div>
+            <div class="ring-inner"></div>
+            <div class="top-arc">★ SETTLED ★</div>
+            <div class="center">spent</div>
+            <div class="bot-arc">APR · MMXXVI</div>
+          </div>
+
+          <!-- tilted FINALIZED stamp (olive) -->
+          <div class="pc-final-stamp">FINALIZED</div>
+
+          <!-- bottom-left tagline -->
+          <p class="pc-tagline">Wish you were splitting here.</p>
+
+          <!-- bottom-right grand total -->
+          <div class="pc-total">
+            <div class="lbl">GRAND TOTAL</div>
+            <div class="num">¥48,600</div>
+            <div class="per">¥12,150 per splitter · 11 expenses</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="keepsake-notes">
+      <li><b>Cinnabar postmark</b> — three concentric rings (outer dashed, mid solid, inner faint), rotated 8° just like a real cancellation stamp.</li>
+      <li><b>Roman-numeral year</b> — the postmark month sits beside <code>MMXXVI</code> instead of 2026, the convention of old picture-postcards.</li>
+      <li><b>"Wish you were splitting here."</b> — a one-line nod to the postcard cliché, in italic serif.</li>
+      <li><b>Olive FINALIZED stamp</b> tilts -6°, set on a soft white pad so the rotation reads cleanly over the paper grain.</li>
+    </ul>
+
+    <!-- ========================= HOW IT WORKS (compact) ========================= -->
+    <div class="section-rule"><span class="section-title">How it works</span></div>
+    <section class="steps">
+      <div class="step">
+        <div class="step-num">i.</div>
+        <h3>Log it</h3>
+        <p>Add an expense — who paid, how much, and who splits the bill.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">ii.</div>
+        <h3>Settle</h3>
+        <p>Balances update live; the suggested transfers minimize payments.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">iii.</div>
+        <h3>Finalize</h3>
+        <p>Freeze the books, export the receipt, send the postcard.</p>
+      </div>
+    </section>
+
+    <!-- ========================= NOTES ========================= -->
+    <div class="section-rule"><span class="section-title">A few notes</span></div>
+    <section class="why-grid">
+      <div class="why">
+        <p class="why-mark">No new account</p>
+        <h4>Sign in with GitHub.</h4>
+        <p>Your friends already have one. No new password, no email confirmation loop.</p>
+      </div>
+      <div class="why">
+        <p class="why-mark">Private by group</p>
+        <h4>Only members see it.</h4>
+        <p>Each group is invite-only. Nothing is public, nothing is indexed.</p>
+      </div>
+      <div class="why">
+        <p class="why-mark">Installable</p>
+        <h4>Works as an app.</h4>
+        <p>Add to your home screen on iOS or Android. Works offline once loaded.</p>
+      </div>
+      <div class="why">
+        <p class="why-mark">Open source</p>
+        <h4>The math is auditable.</h4>
+        <p>The whole client is on GitHub. Inspect the splits, fork it, host your own.</p>
+      </div>
+    </section>
+
+    <!-- ========================= FOOTER CTA ========================= -->
+    <section class="footer-cta">
+      <h3>Ready to settle the bill?</h3>
+      <a class="hero-cta" href="#">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        Sign in with GitHub
+      </a>
+      <p class="footer-foot">SplitStupid · <a href="#">github.com/lfkdsk/splitstupid</a></p>
+    </section>
+  </main>
+
+  <script>
+    // Torn edge for the receipt — generate a zigzag clip-path matching
+    // src/lib/receipt.ts (TOOTH_W=12, TOOTH_H=7), but scaled to display size.
+    function applyTornEdge(el) {
+      const rect = el.getBoundingClientRect();
+      const w = rect.width, h = rect.height;
+      const tw = 8, th = 5;
+      const top = [];
+      const bot = [];
+      let x = 0;
+      // Top edge: start at (0, th), then zigzag right.
+      top.push(`0 ${th}px`);
+      while (x < w) {
+        const next = Math.min(x + tw, w);
+        top.push(`${(x + next) / 2}px 0`);
+        top.push(`${next}px ${th}px`);
+        x = next;
+      }
+      // Right edge.
+      top.push(`${w}px ${h - th}px`);
+      // Bottom edge: zigzag left.
+      while (x > 0) {
+        const next = Math.max(x - tw, 0);
+        bot.push(`${(x + next) / 2}px ${h}px`);
+        bot.push(`${next}px ${h - th}px`);
+        x = next;
+      }
+      // Close.
+      bot.push(`0 ${th}px`);
+      el.style.clipPath = `polygon(${[...top, ...bot].join(', ')})`;
+    }
+
+    // Barcode — random bars, seeded by a string so it stays stable.
+    function drawBarcode(el, seed) {
+      let h = 2166136261 >>> 0;
+      for (let i = 0; i < seed.length; i++) {
+        h ^= seed.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      const rng = (() => {
+        let a = h;
+        return () => {
+          let t = (a += 0x6d2b79f5);
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      })();
+      let html = '';
+      for (let i = 0; i < 80; i++) {
+        const w = rng() < 0.5 ? 1 : rng() < 0.45 ? 3 : 2;
+        const visible = rng() < 0.86;
+        if (visible) {
+          html += `<i style="width:${w}px"></i>`;
+        } else {
+          html += `<i style="width:${w}px;background:transparent"></i>`;
+        }
+      }
+      el.innerHTML = html;
+    }
+
+    function init() {
+      const r = document.getElementById('receipt-paper');
+      if (r) applyTornEdge(r);
+      const b = document.getElementById('barcode');
+      if (b) drawBarcode(b, 'zKx9p');
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+    window.addEventListener('resize', init);
+  </script>
+</body>
+</html>
