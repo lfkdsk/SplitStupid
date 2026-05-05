@@ -1,23 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Balance, Group, Transfer } from '../types'
-import { renderReceipt, renderReceiptBlob } from '../lib/receipt'
 
-// Modal that previews the rendered receipt PNG and offers Download / Share.
-// We render to a fresh canvas inside the modal each time it opens so the
-// preview always matches the current ledger — no stale snapshots if the
-// user voids an expense and re-opens.
-export default function ReceiptModal({
+// Generic preview-and-share modal for any canvas-rendered PNG. Both the
+// Receipt and the Trip Postcard plug into this — only the renderer fn
+// and the button labels differ.
+//
+// The render fn is closed over the caller's data (group / balances / etc.)
+// so the modal stays decoupled from the model layer.
+export default function ShareImageModal({
   open,
   onClose,
-  group,
-  balances,
-  transfers,
+  title,
+  hint,
+  filename,
+  shareTitle,
+  shareText,
+  renderCanvas,
+  // Optional: max preview width in CSS px so a wide artwork (postcard) and
+  // a narrow artwork (receipt) can both look right inside the same modal.
+  previewMaxWidth,
 }: {
   open: boolean
   onClose: () => void
-  group: Group
-  balances: Balance[]
-  transfers: Transfer[]
+  title: string
+  hint: string
+  filename: string
+  shareTitle: string
+  shareText: string
+  renderCanvas: () => Promise<HTMLCanvasElement>
+  previewMaxWidth?: number
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const blobCacheRef = useRef<Blob | null>(null)
@@ -45,24 +55,24 @@ export default function ReceiptModal({
     let cancelled = false
     ;(async () => {
       try {
-        const canvas = await renderReceipt({ group, balances, transfers })
+        const canvas = await renderCanvas()
         if (cancelled) return
-        container.replaceChildren(canvas)
         canvas.style.width = '100%'
         canvas.style.height = 'auto'
         canvas.style.display = 'block'
+        container.replaceChildren(canvas)
       } catch (e: unknown) {
         if (cancelled) return
-        setError((e as Error)?.message || 'Failed to render receipt')
+        setError((e as Error)?.message || 'Failed to render image')
       } finally {
         if (!cancelled) setBusy(false)
       }
     })()
 
     return () => { cancelled = true }
-  }, [open, group, balances, transfers])
+  }, [open, renderCanvas])
 
-  // Esc-to-close. Mirrors ConfirmModal's behaviour.
+  // Esc to close. Backdrop click handled below via inline listener.
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
@@ -76,7 +86,13 @@ export default function ReceiptModal({
 
   async function getBlob(): Promise<Blob> {
     if (blobCacheRef.current) return blobCacheRef.current
-    const blob = await renderReceiptBlob({ group, balances, transfers })
+    const canvas = await renderCanvas()
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        b => b ? resolve(b) : reject(new Error('Failed to encode PNG')),
+        'image/png',
+      )
+    })
     blobCacheRef.current = blob
     return blob
   }
@@ -89,11 +105,10 @@ export default function ReceiptModal({
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `splitstupid-${group.id}.png`
+      a.download = filename
       document.body.appendChild(a)
       a.click()
       a.remove()
-      // Defer revoke so the browser actually fetches the blob first.
       setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Failed to download')
@@ -107,11 +122,11 @@ export default function ReceiptModal({
     setError(null)
     try {
       const blob = await getBlob()
-      const file = new File([blob], `splitstupid-${group.id}.png`, { type: 'image/png' })
+      const file = new File([blob], filename, { type: 'image/png' })
       const data: ShareData = {
         files: [file],
-        title: `${group.name} — SplitStupid receipt`,
-        text: `Receipt for ${group.name}`,
+        title: shareTitle,
+        text: shareText,
       }
       if (
         typeof navigator.canShare === 'function' &&
@@ -123,7 +138,7 @@ export default function ReceiptModal({
         await handleDownload()
       }
     } catch (e: unknown) {
-      // User-cancelled share dialogs throw AbortError — not an error.
+      // User-cancelled share dialogs throw AbortError — silent.
       if ((e as { name?: string })?.name !== 'AbortError') {
         setError((e as Error)?.message || 'Failed to share')
       }
@@ -132,6 +147,10 @@ export default function ReceiptModal({
     }
   }
 
+  const wrapStyle = previewMaxWidth
+    ? { maxWidth: `${previewMaxWidth}px` }
+    : undefined
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
@@ -139,14 +158,12 @@ export default function ReceiptModal({
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Share receipt"
+        aria-label={title}
       >
         <div className="receipt-modal-head">
           <div>
-            <h3 className="modal-title" style={{ margin: 0 }}>Share receipt</h3>
-            <p className="muted subtle" style={{ margin: '4px 0 0' }}>
-              A printable snapshot of the ledger — send it as an image.
-            </p>
+            <h3 className="modal-title" style={{ margin: 0 }}>{title}</h3>
+            <p className="muted subtle" style={{ margin: '4px 0 0' }}>{hint}</p>
           </div>
           <button
             type="button"
@@ -166,7 +183,7 @@ export default function ReceiptModal({
         )}
 
         <div className="receipt-preview">
-          <div ref={containerRef} className="receipt-canvas-wrap" />
+          <div ref={containerRef} className="receipt-canvas-wrap" style={wrapStyle} />
           {busy && <div className="receipt-busy">Composing…</div>}
         </div>
 

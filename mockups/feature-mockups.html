@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SplitStupid · Feature Mockups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,600;1,9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Palette mirrored from src/styles.css */
+  :root {
+    --bg: #faf6ef;
+    --bg-elevated: #ffffff;
+    --bg-subtle: #f3ece0;
+    --fg: #1a1410;
+    --fg-muted: #6f6356;
+    --fg-subtle: #a89c8b;
+    --border: rgba(26, 20, 16, 0.10);
+    --border-strong: rgba(26, 20, 16, 0.22);
+    --accent: #c2410c;
+    --positive: #3f6212;
+    --negative: #9f1239;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-display: 'Fraunces', 'Source Serif Pro', Georgia, serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--fg);
+    padding: 56px 24px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage { max-width: 800px; margin: 0 auto; }
+  h1.title {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: 36px; letter-spacing: -0.025em; margin: 0 0 8px;
+  }
+  .lede { color: var(--fg-muted); font-size: 14px; line-height: 1.65; max-width: 620px; margin: 0 0 12px; }
+  h2.feature-title {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: 24px; margin: 56px 0 8px; letter-spacing: -0.02em;
+  }
+  .feature-note { color: var(--fg-muted); font-size: 14px; line-height: 1.65; max-width: 620px; margin: 0 0 22px; }
+  .feature-note em { color: var(--fg); font-style: italic; }
+
+  /* =====================================================================
+     Mockup A — IOU PAID stamp on Suggested Transfers
+  ===================================================================== */
+  .card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 24px;
+    box-shadow: 0 1px 2px rgba(26,20,16,0.05);
+  }
+  .section-title {
+    font-family: var(--font-mono); font-size: 10px;
+    font-weight: 500; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--fg-muted);
+    margin: 0 0 14px;
+  }
+
+  .transfer {
+    position: relative;
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
+    background: var(--bg-subtle);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  .transfer + .transfer { margin-top: 22px; }
+  .transfer.paid { opacity: 0.6; }
+
+  .av {
+    width: 24px; height: 24px; border-radius: 50%;
+    color: #fff8f1; font-family: var(--font-display);
+    font-style: italic; font-weight: 700; font-size: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0; line-height: 1;
+  }
+  .av-a { background: linear-gradient(135deg, #f1c597, #c2410c); }
+  .av-b { background: linear-gradient(135deg, #d6c5a0, #6f6356); }
+  .av-c { background: linear-gradient(135deg, #e8b3b3, #9f1239); }
+  .av-d { background: linear-gradient(135deg, #b8d49a, #3f6212); }
+
+  .nm { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; color: var(--fg); }
+  .arrow { color: var(--fg-subtle); font-family: var(--font-mono); font-size: 13px; }
+  .amt {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700; color: var(--fg);
+  }
+
+  .pill-mark {
+    background: transparent; color: var(--accent);
+    border: 1.5px solid var(--accent); border-radius: 9999px;
+    padding: 5px 14px; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.02em; cursor: pointer;
+    font-family: var(--font-sans);
+  }
+
+  /* The hero — diagonal cinnabar PAID stamp, same metaphor as the brand
+     mark and the FINALIZED banner. */
+  .stamp-paid {
+    position: absolute;
+    right: 110px;
+    top: 50%;
+    transform: translateY(-50%) rotate(-7deg);
+    border: 2px solid var(--accent);
+    color: var(--accent);
+    padding: 4px 12px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    background: rgba(255,255,255,0.6);
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(194, 65, 12, 0.06) inset;
+  }
+  .stamp-paid.tilt2 { transform: translateY(-50%) rotate(-3deg); }
+
+  .transfer-meta {
+    position: absolute;
+    left: 16px;
+    bottom: -18px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-subtle);
+    letter-spacing: 0.02em;
+  }
+  .transfer-meta b { color: var(--positive); font-weight: 600; }
+
+  /* =====================================================================
+     Mockup B — Trip Postcard
+  ===================================================================== */
+  .postcard {
+    width: 720px; max-width: 100%;
+    aspect-ratio: 720/460;
+    background: var(--bg);
+    position: relative;
+    border: 1px solid var(--border-strong);
+    box-shadow: 0 28px 64px rgba(26,20,16,0.20),
+                0 4px 8px rgba(26,20,16,0.06);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 6px 0 0;
+  }
+  .postcard::before {
+    content: '';
+    position: absolute; inset: 14px;
+    border: 1px dashed rgba(26,20,16,0.22);
+    border-radius: 2px; pointer-events: none;
+  }
+  /* Subtle paper grain — same effect as the canvas receipt's flecks. */
+  .postcard::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(rgba(26,20,16,0.05) 0.5px, transparent 0.6px),
+      radial-gradient(rgba(26,20,16,0.04) 0.4px, transparent 0.5px);
+    background-size: 7px 7px, 11px 11px;
+    background-position: 0 0, 3px 4px;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+
+  .pc-brand {
+    position: absolute; top: 32px; left: 38px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .pc-mark {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: var(--fg); color: var(--bg);
+    font-family: var(--font-display); font-style: italic;
+    font-weight: 700; font-size: 21px;
+    display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1;
+  }
+  .pc-brand-text { font-family: var(--font-display); font-weight: 600; font-size: 17px; line-height: 1.1; }
+  .pc-brand-cap { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.22em; color: var(--fg-muted); margin-top: 4px; }
+
+  .pc-title {
+    position: absolute; top: 116px; left: 38px;
+    font-family: var(--font-display); font-size: 60px;
+    font-weight: 600; letter-spacing: -0.03em; line-height: 0.95;
+    margin: 0; color: var(--fg);
+  }
+  .pc-sub {
+    position: absolute; top: 188px; left: 40px;
+    font-family: var(--font-mono); font-size: 11px;
+    font-weight: 500; letter-spacing: 0.22em; color: var(--fg-muted);
+  }
+
+  .pc-avatars {
+    position: absolute; top: 232px; left: 38px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .pc-av { width: 38px; height: 38px; border-radius: 50%; }
+  .pc-av:nth-child(1) { background: linear-gradient(135deg, #f1c597, #c2410c); }
+  .pc-av:nth-child(2) { background: linear-gradient(135deg, #d6c5a0, #6f6356); }
+  .pc-av:nth-child(3) { background: linear-gradient(135deg, #e8b3b3, #9f1239); }
+  .pc-av:nth-child(4) { background: linear-gradient(135deg, #b8d49a, #3f6212); }
+  .pc-roster {
+    font-family: var(--font-display); font-style: italic;
+    font-size: 16px; color: var(--fg-muted); margin-left: 8px;
+  }
+
+  /* Round postmark / wax-seal-style stamp. Cinnabar + dashed outer ring. */
+  .pc-stamp {
+    position: absolute;
+    top: 46px; right: 50px;
+    width: 168px; height: 168px;
+    border: 2.5px dashed var(--accent);
+    border-radius: 50%;
+    color: var(--accent);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    transform: rotate(8deg);
+  }
+  .pc-stamp::before {
+    content: '';
+    position: absolute; inset: 11px;
+    border: 1.2px solid var(--accent);
+    border-radius: 50%;
+  }
+  .pc-stamp::after {
+    content: '';
+    position: absolute; inset: 22px;
+    border: 0.6px solid rgba(194, 65, 12, 0.45);
+    border-radius: 50%;
+  }
+  .pc-stamp-line1 { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.32em; }
+  .pc-stamp-big {
+    font-family: var(--font-display); font-style: italic;
+    font-weight: 700; font-size: 32px; line-height: 1;
+    margin: 8px 0 6px;
+  }
+  .pc-stamp-line2 { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.28em; }
+
+  .pc-total {
+    position: absolute; bottom: 70px; right: 40px; text-align: right;
+  }
+  .pc-total-label {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.26em; color: var(--fg-muted);
+  }
+  .pc-total-value {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: 46px; letter-spacing: -0.025em; line-height: 1;
+    margin: 6px 0 4px; color: var(--fg);
+  }
+  .pc-total-meta {
+    font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+  }
+
+  .pc-tagline {
+    position: absolute; bottom: 38px; left: 38px;
+    font-family: var(--font-display); font-style: italic;
+    font-size: 17px; color: var(--fg-muted);
+  }
+
+  .pc-finalized {
+    position: absolute; bottom: 66px; left: 38px;
+    font-family: var(--font-mono); font-size: 11px;
+    font-weight: 700; letter-spacing: 0.22em;
+    color: var(--positive);
+    border: 1.5px solid var(--positive);
+    padding: 3px 10px; border-radius: 3px;
+    transform: rotate(-6deg);
+    background: rgba(255,255,255,0.55);
+  }
+
+  .legend {
+    margin-top: 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-subtle);
+    letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <h1 class="title">Feature mockups</h1>
+  <p class="lede">两个候选 feature 的视觉参考。所有颜色、字号、印章、纸纹都直接对齐 src/styles.css 与现有 Receipt 的 canvas 调色，落地后视觉一致。</p>
+
+  <h2 class="feature-title">A · IOU 印章 / Mark transfer as paid</h2>
+  <p class="feature-note">在 Suggested Transfers 的每条后面加状态：未付时显示 <em>Mark as paid</em> 圆角描边按钮（cinnabar）；付款方点了之后变中间这条样子（半透明 + 倾斜 PAID 章 + "awaiting confirmation" 注脚）；收款方再次确认 → 第三条最终态（带 ✓ 字样）。同一条目两侧双签才算锁定。</p>
+
+  <div class="card">
+    <p class="section-title">Suggested transfers</p>
+
+    <div class="transfer">
+      <span class="nm"><span class="av av-b">b</span> bob</span>
+      <span class="arrow">→</span>
+      <span class="nm"><span class="av av-a">a</span> alice</span>
+      <button class="pill-mark">Mark as paid</button>
+      <span class="amt">1,600 JPY</span>
+    </div>
+
+    <div class="transfer paid">
+      <span class="nm"><span class="av av-c">c</span> carol</span>
+      <span class="arrow">→</span>
+      <span class="nm"><span class="av av-a">a</span> alice</span>
+      <span class="amt">800 JPY</span>
+      <span class="stamp-paid">PAID</span>
+      <span class="transfer-meta">paid just now · awaiting alice's confirmation</span>
+    </div>
+
+    <div class="transfer paid">
+      <span class="nm"><span class="av av-d">d</span> dan</span>
+      <span class="arrow">→</span>
+      <span class="nm"><span class="av av-b">b</span> bob</span>
+      <span class="amt">2,400 JPY</span>
+      <span class="stamp-paid tilt2">PAID</span>
+      <span class="transfer-meta">paid 2026-05-03 · <b>confirmed by bob ✓</b></span>
+    </div>
+  </div>
+  <p class="legend">— 三态：pending · paid (one-sided) · settled (双签)</p>
+
+  <h2 class="feature-title">B · Trip Postcard / 纪念明信片</h2>
+  <p class="feature-note">finalize 之后 Receipt 旁多一个 <em>Postcard</em> 按钮，生成 720×460 横版 PNG。复用 Receipt 的 canvas 渲染框架（字体、噪点、颜色），用印戳 + 邮戳的视觉语言总结这趟旅行：群名 / 日期 / 头像 / 总额 / 圆形邮戳 / FINALIZED 章。可下载、可 Web Share。</p>
+
+  <div class="postcard">
+    <div class="pc-brand">
+      <span class="pc-mark">S</span>
+      <div>
+        <div class="pc-brand-text">SplitStupid</div>
+        <div class="pc-brand-cap">— TRIP POSTCARD —</div>
+      </div>
+    </div>
+
+    <div class="pc-stamp">
+      <span class="pc-stamp-line1">★ TOKYO ★</span>
+      <span class="pc-stamp-big">spent</span>
+      <span class="pc-stamp-line2">MAY · MMXXVI</span>
+    </div>
+
+    <h3 class="pc-title">Tokyo Trip</h3>
+    <div class="pc-sub">MAY 1 — 5 ,  2026   ·   4 SPLITTERS</div>
+
+    <div class="pc-avatars">
+      <span class="pc-av"></span>
+      <span class="pc-av"></span>
+      <span class="pc-av"></span>
+      <span class="pc-av"></span>
+      <span class="pc-roster">alice · bob · carol · dan</span>
+    </div>
+
+    <div class="pc-finalized">FINALIZED</div>
+    <div class="pc-tagline">Wish you were splitting here.</div>
+
+    <div class="pc-total">
+      <div class="pc-total-label">GRAND TOTAL</div>
+      <div class="pc-total-value">¥ 48,400</div>
+      <div class="pc-total-meta">¥ 12,100 per splitter · 12 expenses</div>
+    </div>
+  </div>
+  <p class="legend">— 720 × 460, landscape · 与 Receipt 同一套 canvas pipeline · 可下载/Web Share</p>
+</div>
+</body>
+</html>

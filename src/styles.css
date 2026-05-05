@@ -1068,7 +1068,7 @@ button.danger:hover:not(:disabled) {
    the width. The preview area sits on a stage with a soft drop shadow so
    the torn-edge PNG floats over the surrounding paper. */
 .receipt-modal {
-  max-width: 520px;
+  max-width: 600px;
   padding: 22px 22px 18px;
 }
 

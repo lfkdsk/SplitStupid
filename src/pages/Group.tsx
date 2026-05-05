@@ -14,7 +14,9 @@ import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settl
 import { avatarUrl } from '../lib/avatar'
 import type { Group } from '../types'
 import ConfirmModal from '../components/ConfirmModal'
-import ReceiptModal from '../components/ReceiptModal'
+import ShareImageModal from '../components/ShareImageModal'
+import { renderReceipt } from '../lib/receipt'
+import { renderPostcard } from '../lib/postcard'
 
 export default function Group({ groupId, me }: { groupId: string; me: string }) {
   const [group, setGroup] = useState<Group | null>(null)
@@ -24,6 +26,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [receiptOpen, setReceiptOpen] = useState(false)
+  const [postcardOpen, setPostcardOpen] = useState(false)
   // Two-step finalize / reopen confirmation. We track each separately so
   // the modal copy can adapt without juggling a "mode" enum.
   const [confirmFinalize, setConfirmFinalize] = useState(false)
@@ -309,6 +312,17 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           >
             <ReceiptIcon /> Receipt
           </button>
+          {isFinalized && (
+            <button
+              type="button"
+              className="secondary"
+              style={{ flex: '0 0 auto' }}
+              onClick={() => setPostcardOpen(true)}
+              title="Generate a trip postcard image"
+            >
+              <PostcardIcon /> Postcard
+            </button>
+          )}
           {isOwner && !isFinalized && (
             <button
               type="button"
@@ -552,12 +566,28 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         onConfirm={handleFinalize}
       />
 
-      <ReceiptModal
+      <ShareImageModal
         open={receiptOpen}
         onClose={() => setReceiptOpen(false)}
-        group={group}
-        balances={balances}
-        transfers={transfers}
+        title="Share receipt"
+        hint="A printable snapshot of the ledger — send it as an image."
+        filename={`splitstupid-receipt-${group.id}.png`}
+        shareTitle={`${group.name} — SplitStupid receipt`}
+        shareText={`Receipt for ${group.name}`}
+        renderCanvas={() => renderReceipt({ group, balances, transfers })}
+        previewMaxWidth={360}
+      />
+
+      <ShareImageModal
+        open={postcardOpen}
+        onClose={() => setPostcardOpen(false)}
+        title="Trip postcard"
+        hint="A finalized-trip keepsake — send to everyone who split with you."
+        filename={`splitstupid-postcard-${group.id}.png`}
+        shareTitle={`${group.name} — SplitStupid postcard`}
+        shareText={`Postcard from ${group.name}`}
+        renderCanvas={() => renderPostcard({ group })}
+        previewMaxWidth={560}
       />
 
       <ConfirmModal
@@ -616,6 +646,16 @@ function ReceiptIcon() {
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M3 1.5v11l1.25-1L5.5 12.5l1.25-1L8 12.5l1.25-1L10.5 12.5L11.75 11.5V1.5L10.5 2.5L9.25 1.5L8 2.5L6.75 1.5L5.5 2.5L4.25 1.5L3 1.5Z M5 5h5 M5 7.25h5 M5 9.5h3"
         stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function PostcardIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+      <circle cx="9.5" cy="6" r="1.4" stroke="currentColor" strokeWidth="1" fill="none"/>
+      <path d="M3 6.5h3 M3 8.5h5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
     </svg>
   )
 }
