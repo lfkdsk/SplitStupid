@@ -14,6 +14,7 @@ import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settl
 import { avatarUrl } from '../lib/avatar'
 import type { Group } from '../types'
 import ConfirmModal from '../components/ConfirmModal'
+import ReceiptModal from '../components/ReceiptModal'
 
 export default function Group({ groupId, me }: { groupId: string; me: string }) {
   const [group, setGroup] = useState<Group | null>(null)
@@ -22,6 +23,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [joining, setJoining] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [receiptOpen, setReceiptOpen] = useState(false)
   // Two-step finalize / reopen confirmation. We track each separately so
   // the modal copy can adapt without juggling a "mode" enum.
   const [confirmFinalize, setConfirmFinalize] = useState(false)
@@ -298,6 +300,15 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               <ShareIcon /> {shareOpen ? 'Hide share' : 'Share to invite'}
             </button>
           )}
+          <button
+            type="button"
+            className="secondary"
+            style={{ flex: '0 0 auto' }}
+            onClick={() => setReceiptOpen(true)}
+            title="Generate a shareable receipt image"
+          >
+            <ReceiptIcon /> Receipt
+          </button>
           {isOwner && !isFinalized && (
             <button
               type="button"
@@ -541,6 +552,14 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         onConfirm={handleFinalize}
       />
 
+      <ReceiptModal
+        open={receiptOpen}
+        onClose={() => setReceiptOpen(false)}
+        group={group}
+        balances={balances}
+        transfers={transfers}
+      />
+
       <ConfirmModal
         open={confirmReopen}
         title="Reopen this group"
@@ -588,6 +607,15 @@ function UnlockIcon() {
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M3.5 6.5h7a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75v-4A.75.75 0 0 1 3.5 6.5Z M4.75 6.5V4.25a2.25 2.25 0 0 1 4.5 0"
         stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function ReceiptIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M3 1.5v11l1.25-1L5.5 12.5l1.25-1L8 12.5l1.25-1L10.5 12.5L11.75 11.5V1.5L10.5 2.5L9.25 1.5L8 2.5L6.75 1.5L5.5 2.5L4.25 1.5L3 1.5Z M5 5h5 M5 7.25h5 M5 9.5h3"
+        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }

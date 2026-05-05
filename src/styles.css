@@ -1064,6 +1064,83 @@ button.danger:hover:not(:disabled) {
   letter-spacing: 0.02em;
 }
 
+/* Receipt modal — wider than the confirm modal because the canvas drives
+   the width. The preview area sits on a stage with a soft drop shadow so
+   the torn-edge PNG floats over the surrounding paper. */
+.receipt-modal {
+  max-width: 520px;
+  padding: 22px 22px 18px;
+}
+
+.receipt-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.receipt-modal-head .receipt-close {
+  padding: 4px 10px;
+  font-size: 18px;
+  line-height: 1;
+  margin-top: -2px;
+}
+
+.receipt-preview {
+  position: relative;
+  margin-top: 16px;
+  margin-bottom: 16px;
+  padding: 18px 14px;
+  background: linear-gradient(180deg,
+    rgba(26, 20, 16, 0.04) 0%,
+    rgba(26, 20, 16, 0.02) 60%,
+    rgba(26, 20, 16, 0.06) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+.receipt-canvas-wrap {
+  max-width: 360px;
+  margin: 0 auto;
+  filter: drop-shadow(0 14px 32px rgba(26, 20, 16, 0.22))
+          drop-shadow(0 2px 4px rgba(26, 20, 16, 0.10));
+}
+@media (prefers-color-scheme: dark) {
+  .receipt-canvas-wrap {
+    filter: drop-shadow(0 14px 32px rgba(0, 0, 0, 0.55))
+            drop-shadow(0 2px 4px rgba(0, 0, 0, 0.40));
+  }
+}
+
+.receipt-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--fg-muted);
+  background: rgba(250, 246, 239, 0.55);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  border-radius: inherit;
+  pointer-events: none;
+}
+@media (prefers-color-scheme: dark) {
+  .receipt-busy { background: rgba(21, 17, 13, 0.55); }
+}
+
+.receipt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.receipt-actions button { flex: 0 0 auto; }
+
 /* Subtle "finalized" tag on the group list rows. */
 .group-finalized-tag {
   display: inline-block;
