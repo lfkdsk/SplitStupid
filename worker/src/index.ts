@@ -120,6 +120,12 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
 
     if (rest === 'join' && method === 'POST') return await joinGroup(env, me, groupId)
 
+    if (rest === 'finalize') {
+      if (method === 'POST') return await finalizeGroup(env, me, groupId)
+      if (method === 'DELETE') return await reopenGroup(env, me, groupId)
+      return new Response('method not allowed', { status: 405 })
+    }
+
     if (rest === 'events' && method === 'POST') {
       return await postEvent(env, me, groupId, await request.json())
     }
@@ -192,6 +198,7 @@ interface GroupRow {
   currency: string
   owner_login: string
   created_at: number
+  finalized_at: number | null
 }
 
 interface EventRow {
@@ -208,7 +215,7 @@ interface EventRow {
 // UNION naturally dedupes).
 async function listGroups(env: Env, me: string): Promise<Response> {
   const rows = await env.DB.prepare(
-    `SELECT g.id, g.name, g.currency, g.owner_login, g.created_at,
+    `SELECT g.id, g.name, g.currency, g.owner_login, g.created_at, g.finalized_at,
             CASE WHEN g.owner_login = ?1 THEN 'owner' ELSE 'member' END AS role
      FROM groups g
      WHERE g.owner_login = ?1
@@ -252,13 +259,14 @@ async function listGroups(env: Env, me: string): Promise<Response> {
     members: membersByGroup.get(r.id) || [r.owner_login],
     eventCount: countsByGroup.get(r.id) || 0,
     createdAt: r.created_at,
+    finalizedAt: r.finalized_at ?? undefined,
   })))
 }
 
 // GET /groups/:id — full detail.
 async function readGroup(env: Env, me: string, id: string): Promise<Response> {
   const group = await env.DB.prepare(
-    `SELECT id, name, currency, owner_login, created_at FROM groups WHERE id = ?1`,
+    `SELECT id, name, currency, owner_login, created_at, finalized_at FROM groups WHERE id = ?1`,
   ).bind(id).first<GroupRow>()
   if (!group) return json({ error: 'group not found' }, 404)
 
@@ -293,6 +301,7 @@ async function readGroup(env: Env, me: string, id: string): Promise<Response> {
     members: memberLogins,
     events: eventsHydrated,
     createdAt: group.created_at,
+    finalizedAt: group.finalized_at ?? undefined,
   })
 }
 
@@ -349,6 +358,42 @@ async function joinGroup(env: Env, me: string, id: string): Promise<Response> {
   return json({ ok: true })
 }
 
+// POST /groups/:id/finalize — owner only. Locks the ledger; subsequent
+// expense / void / member-change requests get a 409. Idempotent: stamping
+// an already-finalized group is a no-op (we keep the original timestamp).
+async function finalizeGroup(env: Env, me: string, id: string): Promise<Response> {
+  const group = await env.DB.prepare(
+    `SELECT owner_login, finalized_at FROM groups WHERE id = ?`,
+  ).bind(id).first<{ owner_login: string; finalized_at: number | null }>()
+  if (!group) return json({ error: 'group not found' }, 404)
+  if (group.owner_login !== me) return json({ error: 'only owner can finalize' }, 403)
+
+  if (group.finalized_at == null) {
+    await env.DB.prepare(
+      `UPDATE groups SET finalized_at = ? WHERE id = ?`,
+    ).bind(Date.now(), id).run()
+  }
+  const fresh = await env.DB.prepare(
+    `SELECT finalized_at FROM groups WHERE id = ?`,
+  ).bind(id).first<{ finalized_at: number | null }>()
+  return json({ ok: true, finalizedAt: fresh?.finalized_at ?? undefined })
+}
+
+// DELETE /groups/:id/finalize — owner only. Reopens a finalized group so
+// expenses / member changes can resume. Idempotent on an already-open group.
+async function reopenGroup(env: Env, me: string, id: string): Promise<Response> {
+  const group = await env.DB.prepare(
+    `SELECT owner_login FROM groups WHERE id = ?`,
+  ).bind(id).first<{ owner_login: string }>()
+  if (!group) return json({ error: 'group not found' }, 404)
+  if (group.owner_login !== me) return json({ error: 'only owner can reopen' }, 403)
+
+  await env.DB.prepare(
+    `UPDATE groups SET finalized_at = NULL WHERE id = ?`,
+  ).bind(id).run()
+  return json({ ok: true })
+}
+
 // DELETE /groups/:id/members/:login — both "owner kicks member" and
 // "joiner self-leaves" funnel through here. Permission matrix:
 //
@@ -363,10 +408,13 @@ async function joinGroup(env: Env, me: string, id: string): Promise<Response> {
 // participants so kicked-but-historical members keep showing up.
 async function removeMember(env: Env, me: string, id: string, target: string): Promise<Response> {
   const group = await env.DB.prepare(
-    `SELECT owner_login FROM groups WHERE id = ?`,
-  ).bind(id).first<{ owner_login: string }>()
+    `SELECT owner_login, finalized_at FROM groups WHERE id = ?`,
+  ).bind(id).first<{ owner_login: string; finalized_at: number | null }>()
   if (!group) return json({ error: 'group not found' }, 404)
 
+  if (group.finalized_at != null) {
+    return json({ error: 'group is finalized; reopen it before changing membership' }, 409)
+  }
   if (target === group.owner_login) {
     return json({ error: 'owner cannot be removed; delete the group instead' }, 400)
   }
@@ -391,9 +439,13 @@ async function removeMember(env: Env, me: string, id: string, target: string): P
 // a member of the group. Voids are gated on (owner OR original author).
 async function postEvent(env: Env, me: string, id: string, body: any): Promise<Response> {
   const group = await env.DB.prepare(
-    `SELECT owner_login FROM groups WHERE id = ?`,
-  ).bind(id).first<{ owner_login: string }>()
+    `SELECT owner_login, finalized_at FROM groups WHERE id = ?`,
+  ).bind(id).first<{ owner_login: string; finalized_at: number | null }>()
   if (!group) return json({ error: 'group not found' }, 404)
+
+  if (group.finalized_at != null) {
+    return json({ error: 'group is finalized; reopen it to record more events' }, 409)
+  }
 
   // Membership gate. Owner is implicitly a member.
   if (group.owner_login !== me) {

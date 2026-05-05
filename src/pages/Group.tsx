@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
+  finalizeGroup,
   joinGroup,
   makeExpense,
   makeVoid,
   postEvent,
   readGroup,
   removeMember,
+  reopenGroup,
 } from '../lib/api'
 import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settle'
 import { avatarUrl } from '../lib/avatar'
 import type { Group } from '../types'
+import ConfirmModal from '../components/ConfirmModal'
 
 export default function Group({ groupId, me }: { groupId: string; me: string }) {
   const [group, setGroup] = useState<Group | null>(null)
@@ -19,6 +22,10 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [joining, setJoining] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Two-step finalize / reopen confirmation. We track each separately so
+  // the modal copy can adapt without juggling a "mode" enum.
+  const [confirmFinalize, setConfirmFinalize] = useState(false)
+  const [confirmReopen, setConfirmReopen] = useState(false)
 
   // Add-expense form state. Payer is always the authenticated user —
   // server enforces this too, so even a poked request can't claim
@@ -83,6 +90,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
 
   const isOwner = group.owner === me
   const isMember = group.members.includes(me)
+  const isFinalized = group.finalizedAt != null
   const voided = new Set(
     group.events.filter(e => e.type === 'void').map(e => (e as any).targetId),
   )
@@ -125,6 +133,36 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to remove member')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleFinalize() {
+    if (!group) return
+    setBusy(true)
+    setError(null)
+    try {
+      await finalizeGroup(group.id)
+      setConfirmFinalize(false)
+      await refresh()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to finalize')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleReopen() {
+    if (!group) return
+    setBusy(true)
+    setError(null)
+    try {
+      await reopenGroup(group.id)
+      setConfirmReopen(false)
+      await refresh()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reopen')
     } finally {
       setBusy(false)
     }
@@ -199,7 +237,16 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         </div>
       )}
 
-      <div className="card group-header">
+      <div className={`card group-header ${isFinalized ? 'is-finalized' : ''}`}>
+        {isFinalized && (
+          <div className="finalized-banner" role="status">
+            <span className="finalized-stamp">FINALIZED</span>
+            <span className="finalized-meta">
+              Locked {fmtDate(new Date(group.finalizedAt!).toISOString())}
+              {' · '}no more expenses or member changes
+            </span>
+          </div>
+        )}
         <h2>{group.name}</h2>
         <div className="group-header-meta">
           <span>{group.currency}</span>
@@ -216,8 +263,10 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
             //   - Member viewing their own chip → × is a self-leave.
             //   - Member viewing another member's chip → no × (server
             //     would 403 anyway, but no point teasing it).
+            // When the group is finalized the roster freezes too — server
+            // would 409, so don't dangle the affordance.
             const isOwnerChip = m === group.owner
-            const canRemove = !isOwnerChip && (isOwner || m === me)
+            const canRemove = !isFinalized && !isOwnerChip && (isOwner || m === me)
             return (
               <span key={m} className="member-chip">
                 <img src={avatarUrl(m, 36)} alt="" />
@@ -238,15 +287,40 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
             )
           })}
         </div>
-        <div className="row" style={{ gap: 8 }}>
-          <button
-            type="button"
-            className="secondary"
-            style={{ flex: '0 0 auto' }}
-            onClick={() => setShareOpen(o => !o)}
-          >
-            <ShareIcon /> {shareOpen ? 'Hide share' : 'Share to invite'}
-          </button>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {!isFinalized && (
+            <button
+              type="button"
+              className="secondary"
+              style={{ flex: '0 0 auto' }}
+              onClick={() => setShareOpen(o => !o)}
+            >
+              <ShareIcon /> {shareOpen ? 'Hide share' : 'Share to invite'}
+            </button>
+          )}
+          {isOwner && !isFinalized && (
+            <button
+              type="button"
+              className="secondary"
+              style={{ flex: '0 0 auto' }}
+              onClick={() => setConfirmFinalize(true)}
+              disabled={busy}
+              title="Lock the ledger — use once everyone has settled up"
+            >
+              <LockIcon /> Finalize
+            </button>
+          )}
+          {isOwner && isFinalized && (
+            <button
+              type="button"
+              className="secondary"
+              style={{ flex: '0 0 auto' }}
+              onClick={() => setConfirmReopen(true)}
+              disabled={busy}
+            >
+              <UnlockIcon /> Reopen
+            </button>
+          )}
         </div>
       </div>
 
@@ -272,7 +346,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         </div>
       )}
 
-      {!isMember && (
+      {!isMember && !isFinalized && (
         <div className="card join-cta">
           <h3 className="section-title lg" style={{ marginBottom: 6 }}>Join this group</h3>
           <p className="muted" style={{ marginTop: 0, marginBottom: 14 }}>
@@ -285,7 +359,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         </div>
       )}
 
-      {isMember && (
+      {isMember && !isFinalized && (
         <div className="card">
           <div className="section-head">
             <h3 className="section-title">Add expense</h3>
@@ -414,8 +488,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           const isVoided = voided.has(e.id)
           // Owner can void anything; otherwise members can only void
           // events they themselves authored. Server enforces; this is
-          // just the affordance.
-          const canVoid = (isOwner || e.author === me) && !isVoided
+          // just the affordance. A finalized group freezes voiding too.
+          const canVoid = (isOwner || e.author === me) && !isVoided && !isFinalized
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
               <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
@@ -442,6 +516,46 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           )
         })}
       </div>
+
+      <ConfirmModal
+        open={confirmFinalize}
+        title="Finalize this group"
+        body={
+          <>
+            <p>
+              Lock <strong>{group.name}</strong>'s ledger. Once finalized, no one can add
+              expenses, void existing ones, or change the roster — the page becomes a
+              read-only record.
+            </p>
+            <p className="muted" style={{ marginBottom: 0 }}>
+              Use this once everyone has actually paid up. As the owner you can reopen
+              later if something needs to change.
+            </p>
+          </>
+        }
+        confirmLabel="Finalize"
+        cancelLabel="Not yet"
+        tone="danger"
+        busy={busy}
+        onCancel={() => { if (!busy) setConfirmFinalize(false) }}
+        onConfirm={handleFinalize}
+      />
+
+      <ConfirmModal
+        open={confirmReopen}
+        title="Reopen this group"
+        body={
+          <p style={{ margin: 0 }}>
+            Unlock <strong>{group.name}</strong> so members can add expenses and change
+            the roster again? You can finalize again later.
+          </p>
+        }
+        confirmLabel="Reopen"
+        tone="neutral"
+        busy={busy}
+        onCancel={() => { if (!busy) setConfirmReopen(false) }}
+        onConfirm={handleReopen}
+      />
     </>
   )
 }
@@ -455,6 +569,24 @@ function ShareIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M9.5 4.5L7 2L4.5 4.5M7 2v7M3 8.5v2.25A1.25 1.25 0 0 0 4.25 12h5.5A1.25 1.25 0 0 0 11 10.75V8.5"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function LockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M3.5 6.5h7a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75v-4A.75.75 0 0 1 3.5 6.5Z M4.75 6.5V4.25a2.25 2.25 0 0 1 4.5 0V6.5"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function UnlockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M3.5 6.5h7a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75v-4A.75.75 0 0 1 3.5 6.5Z M4.75 6.5V4.25a2.25 2.25 0 0 1 4.5 0"
         stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )

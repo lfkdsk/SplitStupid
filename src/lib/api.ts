@@ -57,6 +57,18 @@ export const deleteGroup = (id: string): Promise<void> =>
 export const joinGroup = (id: string): Promise<{ ok: true }> =>
   call<{ ok: true }>(`/groups/${encodeURIComponent(id)}/join`, { method: 'POST' })
 
+// Owner-only: lock the ledger. Worker rejects subsequent expense / void /
+// member-change requests with 409 until reopenGroup is called.
+export const finalizeGroup = (id: string): Promise<{ ok: true; finalizedAt?: number }> =>
+  call<{ ok: true; finalizedAt?: number }>(
+    `/groups/${encodeURIComponent(id)}/finalize`, { method: 'POST' },
+  )
+
+export const reopenGroup = (id: string): Promise<{ ok: true }> =>
+  call<{ ok: true }>(
+    `/groups/${encodeURIComponent(id)}/finalize`, { method: 'DELETE' },
+  )
+
 // Remove a member from a group. Used both for owner-kicks-someone and
 // for member-leaves-self (call with login=me). The Worker enforces
 // the permission matrix server-side.

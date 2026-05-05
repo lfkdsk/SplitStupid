@@ -923,3 +923,160 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 .payer-fixed input.amount:focus {
   box-shadow: 0 0 0 2px var(--accent-bg);
 }
+
+/* Modal — used for typed-name delete confirmation and for finalize/reopen.
+   Backdrop locks the rest of the page; the dialog itself is a card that
+   matches the editorial look. Cancel is the default focus, so the
+   destructive action is never one Enter-tap away. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 11, 7, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+  animation: modal-fade-in 0.12s ease-out;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 24px 26px;
+  max-width: 440px;
+  width: 100%;
+  animation: modal-pop 0.14s ease-out;
+}
+
+@keyframes modal-pop {
+  from { transform: translateY(8px) scale(0.98); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+.modal-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
+  color: var(--fg);
+}
+
+.modal-body {
+  font-size: 14px;
+  color: var(--fg);
+  line-height: 1.6;
+}
+.modal-body p { margin: 0 0 12px; }
+.modal-body p:last-child { margin-bottom: 0; }
+.modal-body strong { font-weight: 600; }
+
+.modal-typed {
+  display: block;
+  margin-top: 16px;
+}
+.modal-typed .field-label code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--fg);
+  letter-spacing: 0;
+}
+.modal-typed input {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+button.danger {
+  background: var(--negative);
+  color: var(--bg-elevated);
+  border-color: transparent;
+}
+button.danger:hover:not(:disabled) {
+  background: var(--negative);
+  filter: brightness(0.92);
+}
+@media (prefers-color-scheme: dark) {
+  button.danger {
+    color: var(--bg);
+  }
+}
+
+/* Finalized banner — sits at the top of the group header card. Uses a
+   subtle olive (positive) accent because finalize = "settled, done".
+   The "FINALIZED" stamp leans on the same ink-stamp metaphor as the
+   brand mark. */
+.finalized-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--positive-bg);
+  border: 1px solid rgba(63, 98, 18, 0.25);
+  border-radius: var(--radius-md);
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+@media (prefers-color-scheme: dark) {
+  .finalized-banner { border-color: rgba(163, 230, 53, 0.28); }
+}
+
+.finalized-stamp {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--positive);
+  border: 1.5px solid var(--positive);
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  /* Hand-stamped feel: tiny rotation, slight transparency. */
+  transform: rotate(-2deg);
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+}
+
+.finalized-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+  letter-spacing: 0.02em;
+}
+
+/* Subtle "finalized" tag on the group list rows. */
+.group-finalized-tag {
+  display: inline-block;
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--positive);
+  border: 1px solid var(--positive);
+  padding: 1px 6px;
+  border-radius: 3px;
+  vertical-align: middle;
+  transform: translateY(-1px);
+}

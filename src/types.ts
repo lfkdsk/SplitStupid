@@ -13,6 +13,8 @@ export interface Group {
   events: Event[]
   /** Unix ms (server-assigned). */
   createdAt: number
+  /** Unix ms when the owner finalized (locked) the group. Undefined while open. */
+  finalizedAt?: number
 }
 
 /** Lightweight shape returned by GET /groups for the dashboard list view. */
@@ -27,6 +29,7 @@ export interface GroupSummary {
   /** Active expense count (voided ones excluded). */
   eventCount: number
   createdAt: number
+  finalizedAt?: number
 }
 
 export type Event = ExpenseEvent | VoidEvent

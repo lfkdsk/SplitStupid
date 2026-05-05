@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { createGroup, deleteGroup, listGroups, removeMember } from '../lib/api'
 import type { GroupSummary } from '../types'
 import { avatarUrl } from '../lib/avatar'
+import ConfirmModal from '../components/ConfirmModal'
 
 export default function Groups({ me }: { me: string }) {
   const [groups, setGroups] = useState<GroupSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [pendingRemove, setPendingRemove] = useState<GroupSummary | null>(null)
   const [name, setName] = useState('')
   const [currency, setCurrency] = useState('USD')
 
@@ -32,23 +34,24 @@ export default function Groups({ me }: { me: string }) {
     }
   }
 
-  // Owner → hard delete the underlying group (gone for everyone).
-  // Non-owner → leave; the group continues to exist for everyone else,
-  // and they can rejoin from the share link.
-  async function handleRemove(g: GroupSummary) {
+  // Owner → hard delete (typed-name confirmation, since the ledger is
+  // gone for everyone). Non-owner → leave (plain confirmation, since
+  // they can rejoin via share link).
+  function requestRemove(g: GroupSummary) {
+    setPendingRemove(g)
+  }
+
+  async function confirmRemove() {
+    const g = pendingRemove
+    if (!g) return
     const isOwned = g.role === 'owner'
-    const ok = window.confirm(
-      isOwned
-        ? `Delete group "${g.name}"? The ledger and its full history will be gone for good.`
-        : `Leave "${g.name}"? The group will still exist; you can rejoin from the share link.`,
-    )
-    if (!ok) return
     setRemoving(g.id)
     setError(null)
     try {
       if (isOwned) await deleteGroup(g.id)
       else await removeMember(g.id, me)
       setGroups(prev => prev ? prev.filter(x => x.id !== g.id) : prev)
+      setPendingRemove(null)
     } catch (err: any) {
       setError(err?.message || (isOwned ? 'Failed to delete' : 'Failed to leave'))
     } finally {
@@ -115,7 +118,12 @@ export default function Groups({ me }: { me: string }) {
                   ))}
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <h3 className="group-name">{g.name}</h3>
+                  <h3 className="group-name">
+                    {g.name}
+                    {g.finalizedAt != null && (
+                      <span className="group-finalized-tag" title="Finalized">finalized</span>
+                    )}
+                  </h3>
                   <p className="group-meta">
                     {isOwned ? 'owner' : `joined · ${g.owner}`}
                     {' · '}{g.currency}
@@ -127,7 +135,7 @@ export default function Groups({ me }: { me: string }) {
               <button
                 type="button"
                 className="group-delete"
-                onClick={() => handleRemove(g)}
+                onClick={() => requestRemove(g)}
                 disabled={removing === g.id}
                 title={isOwned ? 'Delete group' : 'Leave group'}
                 aria-label={isOwned ? 'Delete group' : 'Leave group'}
@@ -138,6 +146,34 @@ export default function Groups({ me }: { me: string }) {
           )
         })}
       </div>
+
+      <ConfirmModal
+        open={pendingRemove !== null}
+        title={pendingRemove?.role === 'owner' ? 'Delete group' : 'Leave group'}
+        body={pendingRemove?.role === 'owner' ? (
+          <>
+            <p>
+              You're about to delete <strong>{pendingRemove?.name}</strong>. The full
+              ledger — every expense, void, and member — will be erased for everyone, not
+              just you.
+            </p>
+            <p className="muted" style={{ marginBottom: 0 }}>
+              This cannot be undone.
+            </p>
+          </>
+        ) : (
+          <p style={{ margin: 0 }}>
+            Leave <strong>{pendingRemove?.name}</strong>? The group keeps running without
+            you; rejoin any time from the share link.
+          </p>
+        )}
+        confirmLabel={pendingRemove?.role === 'owner' ? 'Delete group' : 'Leave group'}
+        tone="danger"
+        requirePhrase={pendingRemove?.role === 'owner' ? pendingRemove?.name : undefined}
+        busy={removing === pendingRemove?.id}
+        onCancel={() => { if (removing === null) setPendingRemove(null) }}
+        onConfirm={confirmRemove}
+      />
     </>
   )
 }
