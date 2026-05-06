@@ -1582,3 +1582,125 @@ button.landing-cta {
   border-bottom: 1px dashed transparent;
 }
 .landing-footer-foot a:hover { border-bottom-color: var(--fg-muted); }
+
+/* =============================================================
+   Share-link invite — what someone sees when they open #/g/<id>
+   while signed out. Re-uses the landing palette so the brand
+   reads as one piece, but the hero is replaced by a single
+   "<owner> invited you to join <group>" card.
+   ============================================================= */
+
+.invite-stage { padding-top: 72px; }
+.invite-hero { margin-bottom: 32px; }
+
+.invite-loading { margin: 32px 0; }
+
+.invite-card {
+  margin: 22px auto 24px;
+  max-width: 460px;
+  padding: 26px 28px 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.invite-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  margin-bottom: 14px;
+}
+.invite-owner-avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  object-fit: cover;
+}
+.invite-owner-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.invite-owner-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.invite-owner-login {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+
+.invite-prose {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--fg-muted);
+  margin: 0 0 6px;
+}
+
+.invite-title {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 14px;
+  color: var(--fg);
+}
+
+.invite-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-subtle);
+  letter-spacing: 0.04em;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.invite-meta .dot {
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--fg-subtle);
+}
+.invite-meta-id { text-transform: uppercase; }
+.invite-meta-finalized {
+  color: var(--accent);
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.invite-note {
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 420px;
+  margin: 0 auto 22px;
+}
+
+.invite-footnote {
+  margin: 56px 0 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-subtle);
+}
+.invite-footnote-link {
+  color: var(--fg-muted);
+  border-bottom: 1px dashed transparent;
+}
+.invite-footnote-link:hover { border-bottom-color: var(--fg-muted); }
+

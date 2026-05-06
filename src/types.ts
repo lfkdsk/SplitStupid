@@ -17,6 +17,17 @@ export interface Group {
   finalizedAt?: number
 }
 
+/** Public preview returned by GET /groups/:id/invite — no auth required.
+ *  Just enough to render the share-link landing ("<owner> invited you…"). */
+export interface InviteSummary {
+  id: string
+  name: string
+  currency: string
+  owner: Member
+  memberCount: number
+  finalized: boolean
+}
+
 /** Lightweight shape returned by GET /groups for the dashboard list view. */
 export interface GroupSummary {
   id: string

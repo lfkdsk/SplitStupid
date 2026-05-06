@@ -7,7 +7,7 @@
 // it to a GH login server-side; the frontend never has to think about
 // scopes, gist permissions, or who can read what.
 
-import type { ExpenseEvent, Group, GroupSummary, VoidEvent } from '../types'
+import type { ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from '../types'
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
 
@@ -47,6 +47,19 @@ export const listGroups = (): Promise<GroupSummary[]> =>
 
 export const readGroup = (id: string): Promise<Group> =>
   call<Group>(`/groups/${encodeURIComponent(id)}`)
+
+// Public — intentionally bypasses `call` so it works with no token at all.
+export async function readInvite(id: string): Promise<InviteSummary> {
+  if (!API_URL) throw new Error('VITE_API_URL is not configured')
+  const res = await fetch(`${API_URL}/groups/${encodeURIComponent(id)}/invite`)
+  const text = await res.text()
+  if (!res.ok) {
+    let msg = text
+    try { const p = JSON.parse(text); if (p?.error) msg = p.error } catch { /* not json */ }
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+  return JSON.parse(text) as InviteSummary
+}
 
 export const createGroup = (input: { name: string; currency: string }): Promise<Group> =>
   call<Group>('/groups', { method: 'POST', body: JSON.stringify(input) })

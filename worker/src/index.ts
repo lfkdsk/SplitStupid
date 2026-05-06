@@ -94,6 +94,15 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     })
   }
 
+  // Public invite preview, no auth — used by the share-link landing
+  // page to render "<owner> invited you to join <group>" before the
+  // visitor signs in. Only exposes name / owner / currency / member
+  // count / finalized — no member list, no events.
+  const inviteMatch = path.match(/^\/groups\/([A-Za-z0-9]+)\/invite$/)
+  if (inviteMatch && method === 'GET') {
+    return await readInvite(env, inviteMatch[1])
+  }
+
   // Everything else needs an authenticated GH login.
   const me = await authenticate(request)
   if (typeof me !== 'string') return me  // Response (401)
@@ -261,6 +270,29 @@ async function listGroups(env: Env, me: string): Promise<Response> {
     createdAt: r.created_at,
     finalizedAt: r.finalized_at ?? undefined,
   })))
+}
+
+// GET /groups/:id/invite — public, no auth. Minimal preview so a
+// share-link recipient sees who invited them and what they're joining
+// before going through the OAuth dance.
+async function readInvite(env: Env, id: string): Promise<Response> {
+  const group = await env.DB.prepare(
+    `SELECT id, name, currency, owner_login, finalized_at FROM groups WHERE id = ?1`,
+  ).bind(id).first<GroupRow>()
+  if (!group) return json({ error: 'group not found' }, 404)
+
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM members WHERE group_id = ?1`,
+  ).bind(id).first<{ n: number }>()
+
+  return json({
+    id: group.id,
+    name: group.name,
+    currency: group.currency,
+    owner: group.owner_login,
+    memberCount: row?.n ?? 1,
+    finalized: group.finalized_at != null,
+  })
 }
 
 // GET /groups/:id — full detail.
