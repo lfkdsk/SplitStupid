@@ -13,6 +13,7 @@
 //   • Bottom-L   — italic tagline + tilted olive FINALIZED stamp
 
 import type { Group } from '../types'
+import { displayName } from './avatar'
 import { formatAmount } from './settle'
 
 const PAPER = '#faf6ef'
@@ -219,7 +220,7 @@ function drawAvatars(
   ctx.textBaseline = 'middle'
 
   const maxW = (W - 220) - cx
-  let roster = members.join(' · ')
+  let roster = members.map(displayName).join(' · ')
   if (ctx.measureText(roster).width > maxW) {
     while (roster.length > 4 && ctx.measureText(roster + '…').width > maxW) {
       roster = roster.slice(0, -1)
@@ -407,6 +408,9 @@ function drawFinalizedStamp(ctx: CanvasRenderingContext2D, cx: number, cy: numbe
 // ----- shared utilities -------------------------------------------------
 
 async function loadAvatar(login: string): Promise<HTMLImageElement | null> {
+  // Email-shaped identifiers have no GitHub avatar, so skip the network
+  // call and let the renderer fall straight through to the monogram path.
+  if (login.includes('@')) return null
   // crossOrigin must be set BEFORE src for the request to include the
   // CORS preflight. GitHub avatars send `Access-Control-Allow-Origin: *`,
   // so this works for any real login. For typo'd logins (or if GH is

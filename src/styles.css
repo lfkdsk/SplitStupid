@@ -1241,6 +1241,102 @@ button.landing-cta {
   margin: 14px 0 0;
 }
 
+/* Sign-in panel — stacks the two methods (GitHub + email magic-link)
+   with a faint "or" between them. The email form sits in a single row
+   on wide screens, wraps to two rows on narrow ones. */
+.signin-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin: 0 auto;
+  max-width: 440px;
+  width: 100%;
+}
+.signin-or {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  margin: 0;
+  position: relative;
+  padding: 0 14px;
+}
+.signin-or::before,
+.signin-or::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 32px;
+  height: 1px;
+  background: var(--border-strong);
+}
+.signin-or::before { right: 100%; }
+.signin-or::after  { left: 100%; }
+
+.signin-magic-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.signin-magic-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  text-align: left;
+}
+/* Hide the explicit label when we're already showing the "or" divider —
+   the form's purpose is obvious from context, and the doubled label
+   reads cluttered. We keep the element in the DOM for screen readers. */
+.signin-panel .signin-magic-label {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
+}
+.signin-magic-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.signin-magic-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.signin-magic-row button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.signin-magic-error {
+  margin: 0;
+  font-size: 13px;
+  color: #c2410c;
+  text-align: left;
+}
+.signin-magic-sent {
+  text-align: center;
+  font-size: 14px;
+  color: var(--fg-muted);
+  line-height: 1.55;
+}
+.signin-magic-sent code {
+  font-size: 12px;
+  background: var(--border);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.signin-magic-sent button { margin-top: 10px; }
+
+@media (max-width: 480px) {
+  .signin-magic-row { flex-direction: column; }
+  .signin-magic-row button { width: 100%; }
+}
+
 /* Section rule — em-dashes around a tiny mono caps title. */
 .landing-section-rule {
   text-align: center;

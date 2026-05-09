@@ -11,7 +11,7 @@ import {
   reopenGroup,
 } from '../lib/api'
 import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settle'
-import { avatarUrl } from '../lib/avatar'
+import { avatarUrl, displayName } from '../lib/avatar'
 import type { Group } from '../types'
 import ConfirmModal from '../components/ConfirmModal'
 import ShareImageModal from '../components/ShareImageModal'
@@ -124,7 +124,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     const ok = window.confirm(
       isSelf
         ? `Leave "${group.name}"? You can rejoin from the share link.`
-        : `Remove ${login} from "${group.name}"? Their past expenses stay in the ledger; they just can't record new ones.`,
+        : `Remove ${displayName(login)} from "${group.name}"? Their past expenses stay in the ledger; they just can't record new ones.`,
     )
     if (!ok) return
     setBusy(true)
@@ -273,17 +273,17 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
             const isOwnerChip = m === group.owner
             const canRemove = !isFinalized && !isOwnerChip && (isOwner || m === me)
             return (
-              <span key={m} className="member-chip">
+              <span key={m} className="member-chip" title={m}>
                 <img src={avatarUrl(m, 36)} alt="" />
-                {m}
+                {displayName(m)}
                 {canRemove && (
                   <button
                     type="button"
                     className="chip-remove"
                     onClick={() => handleRemoveMember(m)}
                     disabled={busy}
-                    aria-label={m === me ? 'Leave group' : `Remove ${m}`}
-                    title={m === me ? 'Leave group' : `Remove ${m}`}
+                    aria-label={m === me ? 'Leave group' : `Remove ${displayName(m)}`}
+                    title={m === me ? 'Leave group' : `Remove ${displayName(m)}`}
                   >
                     ×
                   </button>
@@ -410,14 +410,14 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               <span className="field-label">Split equally among</span>
               <div className="chip-row">
                 {group.members.map(m => (
-                  <label key={m} className="check-pill">
+                  <label key={m} className="check-pill" title={m}>
                     <input
                       type="checkbox"
                       checked={participants.includes(m)}
                       onChange={() => toggleParticipant(m)}
                     />
                     <img src={avatarUrl(m, 36)} alt="" />
-                    {m}
+                    {displayName(m)}
                   </label>
                 ))}
               </div>
@@ -447,9 +447,9 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                   : 0
                 return (
                   <div key={b.member} className="balance-row">
-                    <span className="balance-name">
+                    <span className="balance-name" title={b.member}>
                       <img src={avatarUrl(b.member, 36)} alt="" />
-                      <span className="login">{b.member}</span>
+                      <span className="login">{displayName(b.member)}</span>
                     </span>
                     <div className="balance-bar">
                       <span className="balance-bar-mid" />
@@ -472,14 +472,14 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                 <p className="field-label" style={{ marginTop: 4 }}>Suggested transfers</p>
                 {transfers.map((t, i) => (
                   <div key={i} className="transfer">
-                    <span className="transfer-name">
+                    <span className="transfer-name" title={t.from}>
                       <img src={avatarUrl(t.from, 36)} alt="" />
-                      {t.from}
+                      {displayName(t.from)}
                     </span>
                     <span className="transfer-arrow">→</span>
-                    <span className="transfer-name">
+                    <span className="transfer-name" title={t.to}>
                       <img src={avatarUrl(t.to, 36)} alt="" />
-                      {t.to}
+                      {displayName(t.to)}
                     </span>
                     <span className="transfer-amount">{formatAmount(t.amount, group.currency)}</span>
                   </div>
@@ -505,7 +505,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                   <p className="event-title">
                     <span className="event-void">VOID</span> · {e.targetId}
                   </p>
-                  <p className="event-meta">{e.author} · {fmtDate(e.ts)}</p>
+                  <p className="event-meta">{displayName(e.author)} · {fmtDate(e.ts)}</p>
                 </div>
               </div>
             )
@@ -520,10 +520,10 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
               <div className="event-body">
                 <p className="event-title">
-                  <strong>{e.payer}</strong> paid{e.note ? <> for <strong>{e.note}</strong></> : null}
+                  <strong title={e.payer}>{displayName(e.payer)}</strong> paid{e.note ? <> for <strong>{e.note}</strong></> : null}
                 </p>
                 <p className="event-meta">
-                  split among {e.participants.join(', ')} · {fmtDate(e.ts)}
+                  split among {e.participants.map(displayName).join(', ')} · {fmtDate(e.ts)}
                 </p>
               </div>
               <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>

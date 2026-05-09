@@ -7,7 +7,9 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "db:init": "wrangler d1 execute splitstupid --remote --file=migrations/0001_init.sql",
-    "db:init:local": "wrangler d1 execute splitstupid --local --file=migrations/0001_init.sql"
+    "db:init:local": "wrangler d1 execute splitstupid --local --file=migrations/0001_init.sql",
+    "db:migrate:magic": "wrangler d1 execute splitstupid --remote --file=migrations/0003_magic_link.sql",
+    "db:migrate:magic:local": "wrangler d1 execute splitstupid --local --file=migrations/0003_magic_link.sql"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",

@@ -1,9 +1,10 @@
 # SplitStupid
 
-A Splitwise-shaped expense ledger for friend groups, gated on GitHub
-sign-in. Owners create groups, share a QR code, anyone who scans + signs
-in joins themselves and starts logging shared expenses; settlement runs
-the classic min-cashflow greedy client-side.
+A Splitwise-shaped expense ledger for friend groups. Sign in with
+GitHub or with an email magic-link. Owners create groups, share a QR
+code, anyone who scans + signs in joins themselves and starts logging
+shared expenses; settlement runs the classic min-cashflow greedy
+client-side.
 
 ## Repo layout
 
@@ -151,5 +152,42 @@ flow don't have to change; only `events.payload` becomes ciphertext.
 - No new account, no new password — your friends already have GitHub.
 - The Worker doesn't need its own user table; `/user` is the source
   of truth for "who is this token-holder".
-- Caveat: your friends need GitHub accounts. If they don't, use
-  Splitwise.
+- Caveat: not all your friends have a GitHub account. For them, the
+  email magic-link flow below.
+
+## Email magic-link sign-in
+
+A second, parallel auth path for friends who don't have (or don't
+want to use) GitHub. The flow:
+
+1. User enters their email on the landing page → frontend POSTs
+   `/auth/magic/request` to the Worker.
+2. Worker generates a one-time-use token, stores it in
+   `magic_tokens` (D1), and sends an email via Resend with a link
+   like `https://splitstupid.lfkdsk.org/#magic_token=<32-hex>`.
+3. User clicks the link → frontend reads the fragment, POSTs to
+   `/auth/magic/verify`, which atomically consumes the token and
+   issues a 30-day session token (`mls_<48-hex>`).
+4. Frontend stores it in localStorage exactly like a GitHub OAuth
+   token, and sends it as `Authorization: Bearer mls_…` on every
+   subsequent request.
+
+Email users coexist with GitHub users in the same `groups` /
+`members` / `events` tables. The `*_login` columns just hold the
+email address (e.g. `alice@example.com`) instead of a GH username;
+the two id spaces don't overlap because GitHub logins can't contain
+`@`. The UI displays the local-part (`alice`) and synthesizes a
+deterministic colored Monogram in place of a GitHub avatar.
+
+To enable on a deployment, the Worker needs:
+
+```sh
+cd worker
+npm run db:migrate:magic           # apply 0003_magic_link.sql
+npx wrangler secret put RESEND_API_KEY
+# wrangler.toml already sets MAGIC_LINK_FROM and MAGIC_LINK_APP_URL.
+```
+
+Without `RESEND_API_KEY`, the Worker returns 503 from the request
+endpoint and the frontend just hides the email form (the GitHub
+button still works).

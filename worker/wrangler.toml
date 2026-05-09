@@ -19,3 +19,15 @@ database_id = "c716062a-f103-420b-9c23-c6921ad5360c"
 # Origins allowed to talk to this Worker. Worker echoes the request's
 # Origin if it matches one of these, otherwise CORS rejects.
 ALLOWED_ORIGINS = "https://splitstupid.lfkdsk.org,http://localhost:5180"
+
+# Magic-link email auth. Sent emails are addressed FROM this address;
+# the link in the body resolves to MAGIC_LINK_APP_URL/#magic_token=…
+# (when unset, the Worker uses the request's Origin if it's allowed,
+# which keeps localhost dev working out of the box).
+MAGIC_LINK_FROM = "SplitStupid <noreply@splitstupid.lfkdsk.org>"
+MAGIC_LINK_APP_URL = "https://splitstupid.lfkdsk.org"
+
+# RESEND_API_KEY is a secret, NOT set here. Provision it once with:
+#   npx wrangler secret put RESEND_API_KEY
+# Without it, /auth/magic/request returns 503 and the frontend hides
+# the email form.
