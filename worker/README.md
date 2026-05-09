@@ -22,20 +22,31 @@ api.splitstupid.lfkdsk.org (this worker)
 
 ## Routes
 
-All except `/healthz` require `Authorization: Bearer <gh_oauth_token>`.
-Token can have any scope (or no scope) — we only use it to resolve
-identity via GitHub's `/user` endpoint.
+All except `/healthz` and the two `/auth/magic/*` routes require
+`Authorization: Bearer <token>`, where `<token>` is either:
 
-| Method | Path                       | Body                               | Notes                                            |
-|--------|----------------------------|------------------------------------|--------------------------------------------------|
-| GET    | `/healthz`                 |                                    | No auth.                                         |
-| GET    | `/groups`                  |                                    | Owned ∪ joined for the auth'd user.              |
-| POST   | `/groups`                  | `{name, currency}`                 | Creator becomes owner + sole member.             |
-| GET    | `/groups/:id`              |                                    | Full group (meta, members, events).              |
-| DELETE | `/groups/:id`              |                                    | Owner only. Cascades to members + events.        |
-| POST   | `/groups/:id/join`         |                                    | Idempotent self-add to members.                  |
-| POST   | `/groups/:id/leave`        |                                    | Owner forbidden; must DELETE the group instead.  |
-| POST   | `/groups/:id/events`       | `{type, ...}`                      | Member only. Voids gated on (owner ∨ author).    |
+- a GitHub OAuth token (any scope, even no scope — we resolve identity
+  via GitHub's `/user` endpoint), or
+- a magic-link session token of the form `mls_<48-hex>`, issued by
+  `POST /auth/magic/verify`. Resolved against the local `sessions`
+  table.
+
+| Method | Path                       | Body                | Notes                                            |
+|--------|----------------------------|---------------------|--------------------------------------------------|
+| GET    | `/healthz`                 |                     | No auth.                                         |
+| POST   | `/auth/magic/request`      | `{email}`           | No auth. Always 200, even on unknown email (no enumeration). Requires `RESEND_API_KEY`. |
+| POST   | `/auth/magic/verify`       | `{token}`           | No auth. Trades a magic token for a session token. |
+| GET    | `/auth/me`                 |                     | `{login, kind, displayName, avatarUrl?}` for the auth'd caller. |
+| POST   | `/auth/signout`            |                     | No-op for GH tokens; revokes the row for `mls_…`. |
+| GET    | `/groups`                  |                     | Owned ∪ joined for the auth'd user.              |
+| POST   | `/groups`                  | `{name, currency}`  | Creator becomes owner + sole member.             |
+| GET    | `/groups/:id`              |                     | Full group (meta, members, events).              |
+| DELETE | `/groups/:id`              |                     | Owner only. Cascades to members + events.        |
+| POST   | `/groups/:id/join`         |                     | Idempotent self-add to members.                  |
+| POST   | `/groups/:id/finalize`     |                     | Owner only. Locks the ledger.                    |
+| DELETE | `/groups/:id/finalize`     |                     | Owner only. Reopens a locked ledger.             |
+| DELETE | `/groups/:id/members/:login` |                  | Owner kicks anyone, member self-leaves.          |
+| POST   | `/groups/:id/events`       | `{type, ...}`       | Member only. Voids gated on (owner ∨ author).    |
 
 Event payloads:
 ```jsonc
@@ -69,6 +80,15 @@ npx wrangler d1 create splitstupid
 npm run db:init
 # Or for local dev SQLite:
 npm run db:init:local
+
+# Apply the magic-link migration (sessions + magic_tokens tables).
+npm run db:migrate:magic
+# Local equivalent:
+npm run db:migrate:magic:local
+
+# Provision the Resend API key (required for /auth/magic/* — without
+# it the endpoint returns 503 and the frontend hides the email form).
+npx wrangler secret put RESEND_API_KEY
 
 # Deploy.
 npm run deploy

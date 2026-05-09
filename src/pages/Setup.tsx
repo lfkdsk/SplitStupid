@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isOAuthConfigured, startOAuthFlow } from '../lib/oauth'
+import { isMagicLinkConfigured, requestMagicLink } from '../lib/magic'
 import { renderReceipt } from '../lib/receipt'
 import { renderPostcard } from '../lib/postcard'
 import { computeBalances, settle, formatAmount } from '../lib/settle'
@@ -100,19 +101,7 @@ function Hero({
           <button onClick={onDismissError} aria-label="Dismiss">×</button>
         </div>
       )}
-      {isOAuthConfigured()
-        ? (
-          <button className="landing-cta" onClick={() => startOAuthFlow()}>
-            <GitHubMark /> Sign in with GitHub
-          </button>
-        )
-        : (
-          <div className="error landing-error">
-            OAuth isn't configured. Set <code>VITE_OAUTH_CLIENT_ID</code> and{' '}
-            <code>VITE_OAUTH_WORKER_URL</code> in <code>.env</code>.
-          </div>
-        )
-      }
+      <SignInPanel />
       <p className="landing-fineprint">No new account · Free · Open source</p>
     </section>
   )
@@ -381,15 +370,103 @@ function FooterCta() {
   return (
     <section className="landing-footer-cta">
       <h3>Ready to settle the bill?</h3>
-      {isOAuthConfigured() && (
-        <button className="landing-cta" onClick={() => startOAuthFlow()}>
-          <GitHubMark /> Sign in with GitHub
-        </button>
-      )}
+      <SignInPanel />
       <p className="landing-footer-foot">
         SplitStupid · <a href="https://github.com/lfkdsk/splitstupid" target="_blank" rel="noreferrer">github.com/lfkdsk/splitstupid</a>
       </p>
     </section>
+  )
+}
+
+// Two parallel sign-in methods: GitHub OAuth (one click) and email
+// magic-link (enter address → check inbox → click link). Either one
+// drops the user back into App.tsx with a Bearer token; from there the
+// app doesn't care which scheme issued it.
+function SignInPanel() {
+  const oauthOn = isOAuthConfigured()
+  const magicOn = isMagicLinkConfigured()
+  if (!oauthOn && !magicOn) {
+    return (
+      <div className="error landing-error">
+        Sign-in isn't configured. Set <code>VITE_OAUTH_CLIENT_ID</code> /{' '}
+        <code>VITE_OAUTH_WORKER_URL</code> for GitHub, or{' '}
+        <code>VITE_API_URL</code> + a Worker with <code>RESEND_API_KEY</code> for
+        email magic-link.
+      </div>
+    )
+  }
+  return (
+    <div className="signin-panel">
+      {oauthOn && (
+        <button className="landing-cta" onClick={() => startOAuthFlow()}>
+          <GitHubMark /> Sign in with GitHub
+        </button>
+      )}
+      {oauthOn && magicOn && <p className="signin-or">or</p>}
+      {magicOn && <MagicLinkForm />}
+    </div>
+  )
+}
+
+function MagicLinkForm() {
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = email.trim()
+    if (!trimmed) return
+    setBusy(true)
+    setError(null)
+    const res = await requestMagicLink(trimmed)
+    setBusy(false)
+    if (!res.ok) {
+      setError(res.error || 'Failed to send magic link.')
+      return
+    }
+    setSent(true)
+  }
+
+  if (sent) {
+    return (
+      <div className="signin-magic-sent">
+        <p>
+          <strong>Check your inbox.</strong> We sent a sign-in link to{' '}
+          <code>{email}</code>. The link expires in 15 minutes.
+        </p>
+        <button className="ghost" onClick={() => { setSent(false); setError(null) }}>
+          Use a different email
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <form className="signin-magic-form" onSubmit={onSubmit}>
+      <label className="signin-magic-label" htmlFor="magic-email">
+        Or sign in with email
+      </label>
+      <div className="signin-magic-row">
+        <input
+          id="magic-email"
+          type="email"
+          required
+          autoComplete="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          disabled={busy}
+        />
+        <button type="submit" disabled={busy || !email.trim()}>
+          {busy ? 'Sending…' : 'Send magic link'}
+        </button>
+      </div>
+      {error && (
+        <p className="signin-magic-error" role="alert">{error}</p>
+      )}
+    </form>
   )
 }
 

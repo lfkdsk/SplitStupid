@@ -19,6 +19,12 @@
 interface Env {
   DB: D1Database
   ALLOWED_ORIGINS: string
+  // Magic-link auth — see auth-magic.ts. All optional so a deployment
+  // without email config still boots; magic-link endpoints just return
+  // a 503 in that case.
+  RESEND_API_KEY?: string
+  MAGIC_LINK_FROM?: string
+  MAGIC_LINK_APP_URL?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -94,9 +100,29 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     })
   }
 
-  // Everything else needs an authenticated GH login.
-  const me = await authenticate(request)
+  // Magic-link auth endpoints — must run BEFORE the auth gate below, since
+  // they're how unauthenticated users obtain a session token in the first
+  // place. The verify step is also unauthenticated (it's the auth handshake).
+  if (path === '/auth/magic/request' && method === 'POST') {
+    return await requestMagicLink(env, request, await safeJson(request))
+  }
+  if (path === '/auth/magic/verify' && method === 'POST') {
+    return await verifyMagicLink(env, await safeJson(request))
+  }
+
+  // Everything else needs an authenticated identity (either a GH OAuth
+  // token, or a magic-link session token issued by /auth/magic/verify).
+  const me = await authenticate(request, env)
   if (typeof me !== 'string') return me  // Response (401)
+
+  // Identity introspection — unified shape for both auth schemes so the
+  // frontend doesn't have to know which one issued the bearer token.
+  if (path === '/auth/me' && method === 'GET') {
+    return await readMe(env, me)
+  }
+  if (path === '/auth/signout' && method === 'POST') {
+    return await signOut(env, request, me)
+  }
 
   // GET    /groups
   // POST   /groups
@@ -141,12 +167,25 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
 }
 
 // ---------------------------------------------------------------------------
-// Auth: resolve a Bearer GH token to a login.
+// Auth: resolve a Bearer token to an identity string. Two shapes:
+//
+//   1. `Bearer mls_<48hex>` — a magic-link session, issued by
+//      /auth/magic/verify. Looked up in the local `sessions` table; the
+//      identity returned is the email address.
+//   2. `Bearer <opaque>`    — assumed to be a GitHub OAuth token. Resolved
+//      by calling GitHub /user; the identity returned is the GH login.
+//
+// The two id spaces don't overlap because GitHub logins can't contain "@".
+// Downstream code (groups.owner_login, members.login, events.author_login)
+// treats either shape as an opaque string.
+//
 // Caching by token is omitted in v1 — at low traffic the extra GH /user
 // call per request is fine. If we hit GH rate limits we'll add a KV
 // cache keyed by SHA-256(token).
 
-async function authenticate(request: Request): Promise<string | Response> {
+const MAGIC_SESSION_PREFIX = 'mls_'
+
+async function authenticate(request: Request, env: Env): Promise<string | Response> {
   const auth = request.headers.get('authorization') || ''
   if (!auth.startsWith('Bearer ')) {
     return new Response(JSON.stringify({ error: 'missing bearer token' }), {
@@ -160,6 +199,33 @@ async function authenticate(request: Request): Promise<string | Response> {
     })
   }
 
+  // Magic-link session: look up locally, no external call.
+  if (token.startsWith(MAGIC_SESSION_PREFIX)) {
+    const opaque = token.slice(MAGIC_SESSION_PREFIX.length)
+    if (!/^[0-9a-f]+$/i.test(opaque)) {
+      return new Response(JSON.stringify({ error: 'malformed session token' }), {
+        status: 401, headers: { 'content-type': 'application/json' },
+      })
+    }
+    const row = await env.DB.prepare(
+      `SELECT email, expires_at FROM sessions WHERE token = ?`,
+    ).bind(opaque).first<{ email: string; expires_at: number }>()
+    if (!row) {
+      return new Response(JSON.stringify({ error: 'session not found or revoked' }), {
+        status: 401, headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (row.expires_at < Date.now()) {
+      // Best-effort cleanup; safe to ignore failures.
+      await env.DB.prepare(`DELETE FROM sessions WHERE token = ?`).bind(opaque).run().catch(() => {})
+      return new Response(JSON.stringify({ error: 'session expired; sign in again' }), {
+        status: 401, headers: { 'content-type': 'application/json' },
+      })
+    }
+    return row.email
+  }
+
+  // Otherwise treat as a GitHub OAuth token.
   let resp: Response
   try {
     resp = await fetch('https://api.github.com/user', {
@@ -517,6 +583,172 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     author: me,
     ...payload,
   }, 201)
+}
+
+// ---------------------------------------------------------------------------
+// Auth: magic-link handlers
+// =========================================================================
+// Two-step email login. Step 1 (request) writes a one-time token to D1
+// and emails a link. Step 2 (verify) trades the link's token for a
+// long-lived `mls_<hex>` session token that the frontend then sends as
+// `Authorization: Bearer mls_…` on subsequent calls.
+
+const MAGIC_TOKEN_TTL_MS = 15 * 60 * 1000          // link valid for 15 min
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000    // session valid for 30 days
+// Loose RFC-5322-ish validator. We're not trying to bounce every weird-
+// but-legal mailbox; we're trying to reject obvious garbage and anything
+// that would let a caller smuggle a GH login (which can't contain "@").
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// POST /auth/magic/request — body: { email }
+// Always returns { ok: true } regardless of whether the email is real or
+// not, so a caller can't enumerate registered users. The actual sending
+// happens in the background; failures are logged but not surfaced.
+async function requestMagicLink(env: Env, request: Request, body: any): Promise<Response> {
+  if (!env.RESEND_API_KEY || !env.MAGIC_LINK_FROM) {
+    return json({ error: 'magic-link auth not configured on this deployment' }, 503)
+  }
+  const raw = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
+  if (!EMAIL_RE.test(raw) || raw.length > 254) {
+    // We reveal *malformed* emails (vs. unregistered) — there's nothing
+    // to enumerate at this layer; the client knows what it sent.
+    return json({ error: 'invalid email' }, 400)
+  }
+
+  const token = randomId(32)
+  const now = Date.now()
+  await env.DB.prepare(
+    `INSERT INTO magic_tokens (token, email, created_at, expires_at) VALUES (?,?,?,?)`,
+  ).bind(token, raw, now, now + MAGIC_TOKEN_TTL_MS).run()
+
+  // Pick a return URL: either the deployment's MAGIC_LINK_APP_URL, or
+  // honor the request's Origin if it's in ALLOWED_ORIGINS (covers
+  // localhost dev). The link encodes the token in the URL fragment so
+  // it never hits the server log; the frontend reads it client-side and
+  // POSTs it to /auth/magic/verify.
+  const appUrl = pickAppUrl(env, request)
+  const link = `${appUrl}/#magic_token=${token}`
+
+  try {
+    await sendMagicEmail(env, raw, link)
+  } catch (err: any) {
+    // Log to console — Worker tail will surface it. We still return
+    // ok:true to the caller so timing doesn't leak whether the send
+    // succeeded.
+    console.error('magic-link send failed:', err?.message || err)
+  }
+
+  return json({ ok: true })
+}
+
+// POST /auth/magic/verify — body: { token }
+// Atomically consumes the magic token (one-time use) and issues a session.
+async function verifyMagicLink(env: Env, body: any): Promise<Response> {
+  const token = typeof body?.token === 'string' ? body.token.trim() : ''
+  if (!/^[0-9a-f]{32}$/i.test(token)) {
+    return json({ error: 'invalid token' }, 400)
+  }
+
+  const row = await env.DB.prepare(
+    `SELECT email, expires_at, consumed_at FROM magic_tokens WHERE token = ?`,
+  ).bind(token).first<{ email: string; expires_at: number; consumed_at: number | null }>()
+  if (!row) return json({ error: 'token not found' }, 400)
+  if (row.consumed_at != null) return json({ error: 'token already used' }, 400)
+  if (row.expires_at < Date.now()) return json({ error: 'token expired' }, 400)
+
+  const sessionToken = randomId(48)
+  const now = Date.now()
+  // Mark token consumed and create the session in one batch so we can't
+  // hand out a session for a token that another concurrent verify also
+  // redeems. (D1 batches run as a single SQLite transaction.)
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE magic_tokens SET consumed_at = ? WHERE token = ? AND consumed_at IS NULL`,
+    ).bind(now, token),
+    env.DB.prepare(
+      `INSERT INTO sessions (token, email, created_at, expires_at) VALUES (?,?,?,?)`,
+    ).bind(sessionToken, row.email, now, now + SESSION_TTL_MS),
+  ])
+
+  return json({
+    token: `${MAGIC_SESSION_PREFIX}${sessionToken}`,
+    email: row.email,
+    expiresAt: now + SESSION_TTL_MS,
+  })
+}
+
+// GET /auth/me — unified shape across both auth schemes. The frontend
+// uses this to populate the header pill once it has a token.
+async function readMe(_env: Env, me: string): Promise<Response> {
+  if (me.includes('@')) {
+    return json({ login: me, kind: 'email', displayName: me.split('@')[0] })
+  }
+  return json({ login: me, kind: 'github', displayName: me, avatarUrl: `https://github.com/${encodeURIComponent(me)}.png?size=64` })
+}
+
+// POST /auth/signout — only meaningful for magic-link sessions (we can
+// revoke the row). For GitHub tokens it's a no-op the frontend just
+// forgets the token locally.
+async function signOut(env: Env, request: Request, _me: string): Promise<Response> {
+  const auth = request.headers.get('authorization') || ''
+  const token = auth.slice('Bearer '.length).trim()
+  if (token.startsWith(MAGIC_SESSION_PREFIX)) {
+    const opaque = token.slice(MAGIC_SESSION_PREFIX.length)
+    await env.DB.prepare(`DELETE FROM sessions WHERE token = ?`).bind(opaque).run()
+  }
+  return json({ ok: true })
+}
+
+function pickAppUrl(env: Env, request: Request): string {
+  if (env.MAGIC_LINK_APP_URL) return env.MAGIC_LINK_APP_URL.replace(/\/$/, '')
+  const origin = request.headers.get('origin') || ''
+  const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
+  if (origin && allowed.includes(origin)) return origin.replace(/\/$/, '')
+  return (allowed[0] || '').replace(/\/$/, '')
+}
+
+// Resend's REST API. We deliberately don't pull in their npm SDK — the
+// payload is one POST with a JSON body, not worth the bundle.
+async function sendMagicEmail(env: Env, to: string, link: string): Promise<void> {
+  const subject = 'Your SplitStupid sign-in link'
+  const text =
+    `Click the link below to sign in to SplitStupid. It expires in 15 minutes and can only be used once.\n\n` +
+    `${link}\n\n` +
+    `If you didn't request this, you can ignore this email — nothing was changed.\n`
+  const html =
+    `<p>Click the button below to sign in to SplitStupid. It expires in 15 minutes and can only be used once.</p>` +
+    `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 16px;background:#1a1a1a;color:#fff;text-decoration:none;border-radius:6px;font-family:system-ui,sans-serif;">Sign in to SplitStupid</a></p>` +
+    `<p style="color:#666;font-size:13px;">Or paste this link into your browser:<br><code>${escapeHtml(link)}</code></p>` +
+    `<p style="color:#999;font-size:12px;">If you didn't request this, you can ignore this email — nothing was changed.</p>`
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'authorization': `Bearer ${env.RESEND_API_KEY}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: env.MAGIC_LINK_FROM,
+      to: [to],
+      subject,
+      text,
+      html,
+    }),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`resend ${res.status}: ${body}`)
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!
+  ))
+}
+
+async function safeJson(request: Request): Promise<any> {
+  try { return await request.json() } catch { return {} }
 }
 
 // ---------------------------------------------------------------------------

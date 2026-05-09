@@ -10,6 +10,7 @@
 
 import type { Balance, ExpenseEvent, Group, Transfer } from '../types'
 import { formatAmount } from './settle'
+import { displayName } from './avatar'
 
 const PAPER = '#faf6ef'
 const INK = '#1a1410'
@@ -392,7 +393,7 @@ function expenseRow(
   const noteFont = `italic 500 12px ${FONT_DISPLAY}`
   const splitFont = `500 10px ${FONT_MONO}`
 
-  const splitText = `split among ${e.participants.join(', ')}`
+  const splitText = `split among ${e.participants.map(displayName).join(', ')}`
   const dateText = formatDateShort(new Date(e.ts))
 
   mctx.font = noteFont
@@ -414,7 +415,7 @@ function expenseRow(
       ctx.fillStyle = INK
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      ctx.fillText(`${e.payer} paid`, PAD_X, y)
+      ctx.fillText(`${displayName(e.payer)} paid`, PAD_X, y)
 
       ctx.font = amountFont
       ctx.textAlign = 'right'
@@ -470,7 +471,7 @@ function balanceRow(b: Balance, currency: string): Block {
       ctx.fillStyle = INK
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      ctx.fillText(b.member, PAD_X, y + 1)
+      ctx.fillText(displayName(b.member), PAD_X, y + 1)
 
       const sign = b.balance > 0 ? '+' : ''
       const color = b.balance > 0 ? POSITIVE : b.balance < 0 ? NEGATIVE : SUBTLE
@@ -496,7 +497,7 @@ function transferRow(t: Transfer, currency: string): Block {
       ctx.fillStyle = INK
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      ctx.fillText(`${t.from}  →  ${t.to}`, PAD_X + 14, y + 2)
+      ctx.fillText(`${displayName(t.from)}  →  ${displayName(t.to)}`, PAD_X + 14, y + 2)
 
       ctx.font = `700 13px ${FONT_MONO}`
       ctx.fillStyle = ACCENT

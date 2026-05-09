@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react'
-import { fetchMe } from './lib/me'
+import { fetchMe, type Me } from './lib/me'
 import { setApiToken } from './lib/api'
 import { clearToken, consumeOAuthCallback, loadToken, saveToken } from './lib/oauth'
+import { consumeMagicCallback, revokeSession } from './lib/magic'
+import { avatarUrl } from './lib/avatar'
 import Setup from './pages/Setup'
 import Groups from './pages/Groups'
 import Group from './pages/Group'
-
-interface Me {
-  login: string
-  avatar: string
-}
 
 // Bare-bones hash router: #/ → list, #/g/<id> → detail. Splitting this
 // into react-router for three views would be over-engineering.
@@ -30,20 +27,33 @@ export default function App() {
   const [booting, setBooting] = useState(true)
   const hash = useHashRoute()
 
-  // One-shot boot: consume an OAuth callback fragment if present, then
-  // fall back to a stashed token from localStorage. Validate by calling
-  // GitHub /user — if that succeeds, we know the token still works.
+  // One-shot boot: handle whichever sign-in callback fragment is on the
+  // URL (GitHub OAuth or magic-link), otherwise fall back to a stashed
+  // token from localStorage. Either way we validate by calling /auth/me
+  // — if that succeeds, we know the token still works.
   useEffect(() => {
     let cancelled = false
     async function boot() {
-      const cb = consumeOAuthCallback()
-      if (cb) {
-        if (!cb.ok) {
-          setAuthError(cb.error)
+      // Magic-link callback first: it does its own network round-trip
+      // (POST /auth/magic/verify) so we await before checking OAuth.
+      const magic = await consumeMagicCallback()
+      if (magic) {
+        if (!magic.ok) {
+          setAuthError(magic.error || 'Magic-link sign-in failed.')
           setBooting(false)
           return
         }
-        if (cb.token) saveToken(cb.token)
+        if (magic.token) saveToken(magic.token)
+      } else {
+        const cb = consumeOAuthCallback()
+        if (cb) {
+          if (!cb.ok) {
+            setAuthError(cb.error)
+            setBooting(false)
+            return
+          }
+          if (cb.token) saveToken(cb.token)
+        }
       }
       const t = loadToken()
       if (!t) { setBooting(false); return }
@@ -52,11 +62,11 @@ export default function App() {
         const user = await fetchMe(t)
         if (cancelled) return
         setToken(t)
-        setMe({ login: user.login, avatar: user.avatar_url })
+        setMe(user)
       } catch {
         clearToken()
         setApiToken(null)
-        setAuthError('Stored token rejected by GitHub. Sign in again.')
+        setAuthError('Stored token rejected. Sign in again.')
       } finally {
         if (!cancelled) setBooting(false)
       }
@@ -66,6 +76,11 @@ export default function App() {
   }, [])
 
   function signOut() {
+    // For magic-link sessions, ask the Worker to revoke the row too.
+    // Fire-and-forget — the local clearToken below is what unblocks the
+    // UI, and the Worker call has no UX-visible effect.
+    const t = loadToken()
+    if (t && t.startsWith('mls_')) revokeSession(t)
     clearToken()
     setApiToken(null)
     setToken(null)
@@ -80,6 +95,7 @@ export default function App() {
   }
 
   const groupMatch = hash.match(/^#\/g\/([A-Za-z0-9]+)$/)
+  const avatar = me.avatarUrl || avatarUrl(me.login, 40)
 
   return (
     <div className="app">
@@ -89,8 +105,8 @@ export default function App() {
           SplitStupid
         </a>
         <div className="user-pill">
-          <img src={me.avatar} alt="" />
-          <span className="user-pill-name">{me.login}</span>
+          <img src={avatar} alt="" />
+          <span className="user-pill-name">{me.displayName}</span>
           <button className="ghost" onClick={signOut}>Sign out</button>
         </div>
       </header>

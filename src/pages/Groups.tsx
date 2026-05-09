@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createGroup, deleteGroup, listGroups, removeMember } from '../lib/api'
 import type { GroupSummary } from '../types'
-import { avatarUrl } from '../lib/avatar'
+import { avatarUrl, displayName } from '../lib/avatar'
 import ConfirmModal from '../components/ConfirmModal'
 
 export default function Groups({ me }: { me: string }) {
@@ -114,7 +114,7 @@ export default function Groups({ me }: { me: string }) {
               <a href={`#/g/${g.id}`} className="group-link">
                 <div className="avatar-stack">
                   {g.members.slice(0, 4).map(m => (
-                    <img key={m} src={avatarUrl(m, 56)} alt={m} />
+                    <img key={m} src={avatarUrl(m, 56)} alt={displayName(m)} title={m} />
                   ))}
                 </div>
                 <div style={{ minWidth: 0 }}>
@@ -125,7 +125,7 @@ export default function Groups({ me }: { me: string }) {
                     )}
                   </h3>
                   <p className="group-meta">
-                    {isOwned ? 'owner' : `joined · ${g.owner}`}
+                    {isOwned ? 'owner' : `joined · ${displayName(g.owner)}`}
                     {' · '}{g.currency}
                     {' · '}{g.eventCount} event{g.eventCount === 1 ? '' : 's'}
                   </p>
