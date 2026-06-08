@@ -460,6 +460,11 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     return json({ error: 'type must be "expense" or "void"' }, 400)
   }
 
+  // Event timestamp. Defaults to "now"; an expense may carry a caller-
+  // supplied `ts` (unix ms) to backdate it — the add-expense date picker.
+  // Voids are always stamped now (no reason to backdate an audit row).
+  let ts = Date.now()
+
   let payload: Record<string, unknown>
   if (type === 'expense') {
     const payer = body.payer
@@ -485,6 +490,16 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     if (split !== 'equal' && (typeof split !== 'object' || split === null)) {
       return json({ error: 'split must be "equal" or {login: amount} map' }, 400)
     }
+    // Optional backdate. Must be a sane positive unix-ms integer. We don't
+    // cap the future here: the client sends an absolute instant and a hard
+    // "<= now" check would spuriously reject the default value under normal
+    // client/server clock skew.
+    if (body.ts !== undefined) {
+      if (typeof body.ts !== 'number' || !Number.isInteger(body.ts) || body.ts <= 0) {
+        return json({ error: 'ts must be a positive unix-ms integer' }, 400)
+      }
+      ts = body.ts
+    }
     payload = { payer, amount, participants, split }
     if (typeof note === 'string' && note.trim()) payload.note = note.trim()
   } else {
@@ -505,15 +520,14 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
   }
 
   const eventId = randomId(12)
-  const now = Date.now()
   await env.DB.prepare(
     `INSERT INTO events (id, group_id, type, payload, author_login, ts) VALUES (?,?,?,?,?,?)`,
-  ).bind(eventId, id, type, JSON.stringify(payload), me, now).run()
+  ).bind(eventId, id, type, JSON.stringify(payload), me, ts).run()
 
   return json({
     id: eventId,
     type,
-    ts: new Date(now).toISOString(),
+    ts: new Date(ts).toISOString(),
     author: me,
     ...payload,
   }, 201)

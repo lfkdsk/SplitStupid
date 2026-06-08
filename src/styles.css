@@ -270,6 +270,18 @@ input.amount {
   font-weight: 500;
 }
 
+/* Date picker — mono digits read as a timestamp, matching the ledger feel.
+   The native calendar glyph already follows `color-scheme` for visibility. */
+input.date-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+input.date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.65;
+}
+input.date-input::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
 /* Buttons — primary is cinnabar (the brand action color); secondary
    is outlined ink; ghost is text only. The accent-as-primary pulls the
    eye to the one CTA on each screen. */

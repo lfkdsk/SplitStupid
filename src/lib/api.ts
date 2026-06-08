@@ -81,8 +81,13 @@ export const removeMember = (groupId: string, login: string): Promise<{ ok: true
 // ---------------------------------------------------------------------------
 // Events
 
-/** Payload for a new expense — server fills in id, ts, author. */
-export type NewExpense = Omit<ExpenseEvent, 'id' | 'ts' | 'author'>
+/**
+ * Payload for a new expense — server fills in id and author. `ts` is an
+ * optional override (unix ms): when present the server backdates the event
+ * to that instant, when omitted it stamps "now". This is what lets the
+ * add-expense form offer a date picker.
+ */
+export type NewExpense = Omit<ExpenseEvent, 'id' | 'ts' | 'author'> & { ts?: number }
 /** Payload for a void — server fills in id, ts, author. */
 export type NewVoid = Omit<VoidEvent, 'id' | 'ts' | 'author'>
 

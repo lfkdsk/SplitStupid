@@ -38,6 +38,12 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [amountStr, setAmountStr] = useState('')
   const [note, setNote] = useState('')
   const [participants, setParticipants] = useState<string[]>([])
+  // Expense date. Seeded to "now"; the user can pick another date. We only
+  // send a `ts` override to the server once they've actually touched the
+  // field — otherwise the server stamps now itself, preserving full
+  // sub-minute precision for the common "just log it" path.
+  const [dateStr, setDateStr] = useState(() => toLocalInputValue(new Date()))
+  const [dateEdited, setDateEdited] = useState(false)
 
   async function refresh() {
     setError(null)
@@ -185,6 +191,15 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       setError('Pick at least one participant')
       return
     }
+    let ts: number | undefined
+    if (dateEdited) {
+      const parsed = dateStr ? new Date(dateStr).getTime() : NaN
+      if (!Number.isFinite(parsed)) {
+        setError('Pick a valid date')
+        return
+      }
+      ts = parsed
+    }
     setBusy(true)
     setError(null)
     try {
@@ -194,10 +209,13 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         participants,
         split: 'equal',
         note: note.trim() || undefined,
+        ts,
       }))
       await refresh()
       setAmountStr('')
       setNote('')
+      setDateStr(toLocalInputValue(new Date()))
+      setDateEdited(false)
     } catch (err: any) {
       setError(err?.message || 'Failed to save')
     } finally {
@@ -407,6 +425,16 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               onChange={e => setNote(e.target.value)}
             />
             <div>
+              <span className="field-label">Date</span>
+              <input
+                type="datetime-local"
+                className="date-input"
+                value={dateStr}
+                max={toLocalInputValue(new Date())}
+                onChange={e => { setDateStr(e.target.value); setDateEdited(true) }}
+              />
+            </div>
+            <div>
               <span className="field-label">Split equally among</span>
               <div className="chip-row">
                 {group.members.map(m => (
@@ -612,6 +640,15 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
 function fmtDate(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+// Format a Date for a <input type="datetime-local">, whose value must be
+// "YYYY-MM-DDTHH:mm" in *local* time. toISOString() is UTC and would shift
+// the displayed clock, so build it from the local getters instead.
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function ShareIcon() {
