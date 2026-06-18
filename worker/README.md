@@ -31,11 +31,13 @@ identity via GitHub's `/user` endpoint.
 | GET    | `/healthz`                 |                                    | No auth.                                         |
 | GET    | `/groups`                  |                                    | Owned ∪ joined for the auth'd user.              |
 | POST   | `/groups`                  | `{name, currency}`                 | Creator becomes owner + sole member.             |
+| GET    | `/friends`                 |                                    | Logins you've shared ≥1 group with.              |
 | GET    | `/groups/:id`              |                                    | Full group (meta, members, events).              |
 | DELETE | `/groups/:id`              |                                    | Owner only. Cascades to members + events.        |
 | POST   | `/groups/:id/join`         |                                    | Idempotent self-add to members.                  |
-| POST   | `/groups/:id/leave`        |                                    | Owner forbidden; must DELETE the group instead.  |
-| POST   | `/groups/:id/events`       | `{type, ...}`                      | Member only. Voids gated on (owner ∨ author).    |
+| POST   | `/groups/:id/members`      | `{login}`                          | Owner only. `login` must be a prior split-mate.  |
+| DELETE | `/groups/:id/members/:login` |                                  | Owner kicks, or member self-leaves.              |
+| POST   | `/groups/:id/events`       | `{type, ...}`                      | Member only. Voids: owner ∨ author. Edits: author only. |
 
 Event payloads:
 ```jsonc
@@ -51,6 +53,10 @@ Event payloads:
 
 // type: "void"
 { "type": "void", "targetId": "<event_id>", "reason": "..." }
+
+// type: "edit" — amend an expense in place (author only). `amount` is the
+// new minor-units total, `date` the new effective instant (unix ms).
+{ "type": "edit", "targetId": "<expense_id>", "amount": 9000, "date": 1718000000000 }
 ```
 
 ## One-time setup
@@ -69,6 +75,11 @@ npx wrangler d1 create splitstupid
 npm run db:init
 # Or for local dev SQLite:
 npm run db:init:local
+
+# Later migrations aren't bundled into db:init — apply them in order with a
+# one-off execute (drop --remote / add --local for the dev SQLite copy):
+npx wrangler d1 execute splitstupid --remote --file=migrations/0002_finalize.sql
+npx wrangler d1 execute splitstupid --remote --file=migrations/0003_edit.sql
 
 # Deploy.
 npm run deploy

@@ -3,6 +3,7 @@ import { fetchMe } from './lib/me'
 import { setApiToken } from './lib/api'
 import { clearToken, consumeOAuthCallback, loadToken, saveToken } from './lib/oauth'
 import Setup from './pages/Setup'
+import Invite from './pages/Invite'
 import Groups from './pages/Groups'
 import Group from './pages/Group'
 
@@ -75,11 +76,23 @@ export default function App() {
 
   if (booting) return <div className="app"><p className="muted">Loading…</p></div>
 
+  const groupMatch = hash.match(/^#\/g\/([A-Za-z0-9]+)$/)
+
   if (!token || !me) {
+    // A share link (#/g/<id>) opened by someone signed-out gets a
+    // dedicated invite page that names the inviter — only fall back
+    // to the generic landing for plain visits.
+    if (groupMatch) {
+      return (
+        <Invite
+          groupId={groupMatch[1]}
+          authError={authError}
+          onDismissError={() => setAuthError(null)}
+        />
+      )
+    }
     return <Setup authError={authError} onDismissError={() => setAuthError(null)} />
   }
-
-  const groupMatch = hash.match(/^#\/g\/([A-Za-z0-9]+)$/)
 
   return (
     <div className="app">

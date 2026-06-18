@@ -17,6 +17,17 @@ export interface Group {
   finalizedAt?: number
 }
 
+/** Public preview returned by GET /groups/:id/invite — no auth required.
+ *  Just enough to render the share-link landing ("<owner> invited you…"). */
+export interface InviteSummary {
+  id: string
+  name: string
+  currency: string
+  owner: Member
+  memberCount: number
+  finalized: boolean
+}
+
 /** Lightweight shape returned by GET /groups for the dashboard list view. */
 export interface GroupSummary {
   id: string
@@ -32,7 +43,7 @@ export interface GroupSummary {
   finalizedAt?: number
 }
 
-export type Event = ExpenseEvent | VoidEvent
+export type Event = ExpenseEvent | VoidEvent | EditEvent
 
 export interface ExpenseEvent {
   id: string
@@ -55,6 +66,24 @@ export interface VoidEvent {
   author: Member
   targetId: string
   reason?: string
+}
+
+/** Amends an existing expense's amount / date in place (the append-only
+ *  alternative to a void+repost). `ts` is the audit instant — when the edit
+ *  was recorded; the new *effective* expense date lives in `date`.
+ *  Settlement and the receipt fold the latest edit over its target. */
+export interface EditEvent {
+  id: string
+  type: 'edit'
+  /** Server-assigned ISO timestamp — when the edit was made. */
+  ts: string
+  author: Member
+  /** The expense event this edits. */
+  targetId: string
+  /** New amount in **minor units**. */
+  amount: number
+  /** New effective expense date, **unix ms**. */
+  date: number
 }
 
 export interface Transfer {

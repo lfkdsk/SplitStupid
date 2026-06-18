@@ -9,7 +9,7 @@
 // clipping path tight: we never have to overshoot or guess.
 
 import type { Balance, ExpenseEvent, Group, Transfer } from '../types'
-import { formatAmount } from './settle'
+import { effectiveExpenses, formatAmount } from './settle'
 
 const PAPER = '#faf6ef'
 const INK = '#1a1410'
@@ -192,11 +192,9 @@ function buildBlocks(
   blocks.push(sectionHeader('EXPENSES'))
   blocks.push(spacer(12))
 
-  const voided = new Set<string>()
-  for (const e of group.events) if (e.type === 'void') voided.add(e.targetId)
-  const expenses = group.events.filter(
-    (e): e is ExpenseEvent => e.type === 'expense' && !voided.has(e.id),
-  )
+  // Voided rows dropped, edits folded in — so amounts / dates here match the
+  // in-app ledger and the settlement section below.
+  const expenses = effectiveExpenses(group.events)
 
   let total = 0
   if (expenses.length === 0) {

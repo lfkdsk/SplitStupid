@@ -94,6 +94,15 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     })
   }
 
+  // Public invite preview, no auth — used by the share-link landing
+  // page to render "<owner> invited you to join <group>" before the
+  // visitor signs in. Only exposes name / owner / currency / member
+  // count / finalized — no member list, no events.
+  const inviteMatch = path.match(/^\/groups\/([A-Za-z0-9]+)\/invite$/)
+  if (inviteMatch && method === 'GET') {
+    return await readInvite(env, inviteMatch[1])
+  }
+
   // Everything else needs an authenticated GH login.
   const me = await authenticate(request)
   if (typeof me !== 'string') return me  // Response (401)
@@ -103,6 +112,12 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
   if (path === '/groups') {
     if (method === 'GET') return await listGroups(env, me)
     if (method === 'POST') return await createGroup(env, me, await request.json())
+    return new Response('method not allowed', { status: 405 })
+  }
+
+  // GET /friends — logins you've shared at least one group with.
+  if (path === '/friends') {
+    if (method === 'GET') return await listFriends(env, me)
     return new Response('method not allowed', { status: 405 })
   }
 
@@ -128,6 +143,11 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
 
     if (rest === 'events' && method === 'POST') {
       return await postEvent(env, me, groupId, await request.json())
+    }
+
+    // POST /groups/:id/members — owner pulls in a past split-mate.
+    if (rest === 'members' && method === 'POST') {
+      return await addMember(env, me, groupId, await request.json())
     }
 
     // /groups/:id/members/:login
@@ -204,7 +224,7 @@ interface GroupRow {
 interface EventRow {
   id: string
   group_id: string
-  type: 'expense' | 'void'
+  type: 'expense' | 'void' | 'edit'
   payload: string
   author_login: string
   ts: number
@@ -261,6 +281,29 @@ async function listGroups(env: Env, me: string): Promise<Response> {
     createdAt: r.created_at,
     finalizedAt: r.finalized_at ?? undefined,
   })))
+}
+
+// GET /groups/:id/invite — public, no auth. Minimal preview so a
+// share-link recipient sees who invited them and what they're joining
+// before going through the OAuth dance.
+async function readInvite(env: Env, id: string): Promise<Response> {
+  const group = await env.DB.prepare(
+    `SELECT id, name, currency, owner_login, finalized_at FROM groups WHERE id = ?1`,
+  ).bind(id).first<GroupRow>()
+  if (!group) return json({ error: 'group not found' }, 404)
+
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM members WHERE group_id = ?1`,
+  ).bind(id).first<{ n: number }>()
+
+  return json({
+    id: group.id,
+    name: group.name,
+    currency: group.currency,
+    owner: group.owner_login,
+    memberCount: row?.n ?? 1,
+    finalized: group.finalized_at != null,
+  })
 }
 
 // GET /groups/:id — full detail.
@@ -354,6 +397,59 @@ async function joinGroup(env: Env, me: string, id: string): Promise<Response> {
   await env.DB.prepare(
     `INSERT OR IGNORE INTO members (group_id, login, joined_at) VALUES (?,?,?)`,
   ).bind(id, me, Date.now()).run()
+
+  return json({ ok: true })
+}
+
+// GET /friends — the set of logins `me` has shared at least one group with.
+// Self-join on members: any other login that sits in a group I'm also in.
+// This is the candidate list for "pull a past split-mate into a group".
+async function listFriends(env: Env, me: string): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT DISTINCT m2.login AS login
+     FROM members m1
+     JOIN members m2 ON m1.group_id = m2.group_id
+     WHERE m1.login = ?1 AND m2.login <> ?1
+     ORDER BY m2.login COLLATE NOCASE`,
+  ).bind(me).all<{ login: string }>()
+  return json((rows.results || []).map(r => r.login))
+}
+
+// POST /groups/:id/members — body: { login }. Owner-only direct-add of a
+// past split-mate. The login must be someone the owner has actually shared
+// a group with before; this keeps the endpoint from becoming an
+// add-any-GitHub-user-by-name primitive (which would let an owner stuff a
+// stranger's login into a group's roster). The added member is not asked to
+// consent, but they'll see the group in their list and can self-leave.
+async function addMember(env: Env, me: string, id: string, body: any): Promise<Response> {
+  const login = stringField(body?.login, 'login', 1, 39) // GH login max length
+  if (typeof login !== 'string') return login
+
+  const group = await env.DB.prepare(
+    `SELECT owner_login, finalized_at FROM groups WHERE id = ?`,
+  ).bind(id).first<{ owner_login: string; finalized_at: number | null }>()
+  if (!group) return json({ error: 'group not found' }, 404)
+  if (group.owner_login !== me) {
+    return json({ error: 'only the group owner can add members' }, 403)
+  }
+  if (group.finalized_at != null) {
+    return json({ error: 'group is finalized; reopen it before changing membership' }, 409)
+  }
+
+  // Friendship gate: the login has to share some prior group with the owner.
+  const friend = await env.DB.prepare(
+    `SELECT 1 FROM members m1
+     JOIN members m2 ON m1.group_id = m2.group_id
+     WHERE m1.login = ?1 AND m2.login = ?2 LIMIT 1`,
+  ).bind(me, login).first<{ 1: number }>()
+  if (!friend) {
+    return json({ error: 'you can only add people you\'ve split with before' }, 403)
+  }
+
+  // Idempotent: re-adding an existing member is a no-op.
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO members (group_id, login, joined_at) VALUES (?,?,?)`,
+  ).bind(id, login, Date.now()).run()
 
   return json({ ok: true })
 }
@@ -456,13 +552,15 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
   }
 
   const type = body?.type
-  if (type !== 'expense' && type !== 'void') {
-    return json({ error: 'type must be "expense" or "void"' }, 400)
+  if (type !== 'expense' && type !== 'void' && type !== 'edit') {
+    return json({ error: 'type must be "expense", "void", or "edit"' }, 400)
   }
 
   // Event timestamp. Defaults to "now"; an expense may carry a caller-
   // supplied `ts` (unix ms) to backdate it — the add-expense date picker.
-  // Voids are always stamped now (no reason to backdate an audit row).
+  // Voids and edits are always stamped now: their `ts` is the audit instant
+  // (when the correction happened). An edit's *new effective expense date*
+  // rides in its payload (`date`), not this column.
   let ts = Date.now()
 
   let payload: Record<string, unknown>
@@ -502,7 +600,7 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     }
     payload = { payer, amount, participants, split }
     if (typeof note === 'string' && note.trim()) payload.note = note.trim()
-  } else {
+  } else if (type === 'void') {
     const targetId = body.targetId
     if (typeof targetId !== 'string') return json({ error: 'targetId required' }, 400)
     // Void is gated on (owner OR original event author).
@@ -517,6 +615,37 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     if (typeof body.reason === 'string' && body.reason.trim()) {
       payload.reason = body.reason.trim()
     }
+  } else {
+    // type === 'edit' — amend an existing expense's amount / date in place.
+    // The original expense row stays put; settlement and the receipt fold the
+    // latest edit over it. Edit is the author's alone (matches the rule that
+    // you can only post an expense you paid — you correct your own spend).
+    const targetId = body.targetId
+    const amount = body.amount
+    const date = body.date
+    if (typeof targetId !== 'string') return json({ error: 'targetId required' }, 400)
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
+      return json({ error: 'amount must be a positive integer (minor units)' }, 400)
+    }
+    if (typeof date !== 'number' || !Number.isInteger(date) || date <= 0) {
+      return json({ error: 'date must be a positive unix-ms integer' }, 400)
+    }
+    const target = await env.DB.prepare(
+      `SELECT type, author_login FROM events WHERE id = ? AND group_id = ?`,
+    ).bind(targetId, id).first<{ type: string; author_login: string }>()
+    if (!target) return json({ error: 'targetId not found in this group' }, 404)
+    if (target.type !== 'expense') return json({ error: 'can only edit an expense' }, 400)
+    if (target.author_login !== me) {
+      return json({ error: 'can only edit expenses you authored' }, 403)
+    }
+    // Editing a struck expense makes no sense — it's already out of the
+    // ledger. Reject rather than silently resurrect it.
+    const struck = await env.DB.prepare(
+      `SELECT 1 FROM events WHERE group_id = ? AND type = 'void'
+         AND json_extract(payload,'$.targetId') = ? LIMIT 1`,
+    ).bind(id, targetId).first<{ 1: number }>()
+    if (struck) return json({ error: 'cannot edit a voided expense' }, 409)
+    payload = { targetId, amount, date }
   }
 
   const eventId = randomId(12)

@@ -1,0 +1,41 @@
+name: Deploy Worker to Cloudflare
+
+# The frontend ships to GitHub Pages via deploy.yml; the backend Worker
+# lives on Cloudflare and needs its own `wrangler deploy`. Kept as a
+# separate workflow (not a job in deploy.yml) so a Worker deploy failure
+# never blocks the Pages deploy and vice-versa, and so we only redeploy
+# the Worker when something under worker/ actually changed.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One Worker deploy at a time; back-to-back pushes coalesce.
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      # wrangler-action installs deps from worker/package-lock.json and runs
+      # `wrangler deploy` in that directory. Database id / bindings come from
+      # worker/wrangler.toml; only the credentials are injected here.
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker

@@ -7,7 +7,7 @@
 // it to a GH login server-side; the frontend never has to think about
 // scopes, gist permissions, or who can read what.
 
-import type { ExpenseEvent, Group, GroupSummary, VoidEvent } from '../types'
+import type { EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from '../types'
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
 
@@ -48,6 +48,19 @@ export const listGroups = (): Promise<GroupSummary[]> =>
 export const readGroup = (id: string): Promise<Group> =>
   call<Group>(`/groups/${encodeURIComponent(id)}`)
 
+// Public — intentionally bypasses `call` so it works with no token at all.
+export async function readInvite(id: string): Promise<InviteSummary> {
+  if (!API_URL) throw new Error('VITE_API_URL is not configured')
+  const res = await fetch(`${API_URL}/groups/${encodeURIComponent(id)}/invite`)
+  const text = await res.text()
+  if (!res.ok) {
+    let msg = text
+    try { const p = JSON.parse(text); if (p?.error) msg = p.error } catch { /* not json */ }
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+  return JSON.parse(text) as InviteSummary
+}
+
 export const createGroup = (input: { name: string; currency: string }): Promise<Group> =>
   call<Group>('/groups', { method: 'POST', body: JSON.stringify(input) })
 
@@ -78,6 +91,19 @@ export const removeMember = (groupId: string, login: string): Promise<{ ok: true
     { method: 'DELETE' },
   )
 
+// Logins the signed-in user has shared at least one group with — the
+// candidate list for owner's "add a past split-mate" picker.
+export const listFriends = (): Promise<string[]> =>
+  call<string[]>('/friends')
+
+// Owner-only: directly add a past split-mate to the group. Worker gates
+// this on (owner ∧ login-is-a-prior-split-mate); see addMember there.
+export const addMember = (groupId: string, login: string): Promise<{ ok: true }> =>
+  call<{ ok: true }>(
+    `/groups/${encodeURIComponent(groupId)}/members`,
+    { method: 'POST', body: JSON.stringify({ login }) },
+  )
+
 // ---------------------------------------------------------------------------
 // Events
 
@@ -90,12 +116,15 @@ export const removeMember = (groupId: string, login: string): Promise<{ ok: true
 export type NewExpense = Omit<ExpenseEvent, 'id' | 'ts' | 'author'> & { ts?: number }
 /** Payload for a void — server fills in id, ts, author. */
 export type NewVoid = Omit<VoidEvent, 'id' | 'ts' | 'author'>
+/** Payload for an edit — server fills in id, ts (audit), author. `amount`
+ *  and `date` are the expense's new figures; `targetId` is the expense edited. */
+export type NewEdit = Omit<EditEvent, 'id' | 'ts' | 'author'>
 
 export const postEvent = (
   groupId: string,
-  event: NewExpense | NewVoid,
-): Promise<ExpenseEvent | VoidEvent> =>
-  call<ExpenseEvent | VoidEvent>(
+  event: NewExpense | NewVoid | NewEdit,
+): Promise<ExpenseEvent | VoidEvent | EditEvent> =>
+  call<ExpenseEvent | VoidEvent | EditEvent>(
     `/groups/${encodeURIComponent(groupId)}/events`,
     { method: 'POST', body: JSON.stringify(event) },
   )
@@ -111,4 +140,8 @@ export function makeExpense(input: Omit<NewExpense, 'type'>): NewExpense {
 
 export function makeVoid(input: Omit<NewVoid, 'type'>): NewVoid {
   return { type: 'void', ...input }
+}
+
+export function makeEdit(input: Omit<NewEdit, 'type'>): NewEdit {
+  return { type: 'edit', ...input }
 }
