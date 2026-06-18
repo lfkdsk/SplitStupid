@@ -215,6 +215,29 @@ function buildBlocks(
   blocks.push(totalRow('TOTAL', formatAmount(total, group.currency)))
   blocks.push(spacer(22))
 
+  // Real cost per member: what each person actually bears once all the
+  // fronting and repayment has settled — i.e. the sum of their own share
+  // across every (non-voided) expense, whether that was a multi-way split
+  // or something they spent solo. By construction these sum back to TOTAL,
+  // so the section ties out against the line above.
+  if (expenses.length > 0 && balances.length > 0) {
+    const cost = realCostByMember(expenses)
+    blocks.push(sectionHeader('REAL COST'))
+    blocks.push(spacer(12))
+    blocks.push(subSectionHeader('WHAT EACH ACTUALLY SPENT'))
+    blocks.push(spacer(8))
+    for (const b of balances) {
+      blocks.push(costRow(b.member, cost.get(b.member) ?? 0, group.currency))
+    }
+    blocks.push(spacer(8))
+    blocks.push(captionLine(
+      'Each person’s real cost once everyone settles up — their share of every '
+        + 'split, plus anything spent solo. Adds up to the total above.',
+      mctx,
+    ))
+    blocks.push(spacer(22))
+  }
+
   blocks.push(sectionHeader('SETTLEMENT'))
   blocks.push(spacer(12))
   blocks.push(subSectionHeader('PER-MEMBER BALANCE'))
@@ -478,6 +501,63 @@ function balanceRow(b: Balance, currency: string): Block {
       ctx.fillStyle = color
       ctx.textAlign = 'right'
       ctx.fillText(`${sign}${formatAmount(b.balance, currency)}`, W - PAD_X, y + 1)
+    },
+  }
+}
+
+// Sum each member's own share of every expense. Mirrors settle.ts's debit
+// side exactly (floor split with the rounding remainder dumped on the first
+// participant) so the per-member costs total the same integer as TOTAL.
+function realCostByMember(expenses: ExpenseEvent[]): Map<string, number> {
+  const cost = new Map<string, number>()
+  const add = (m: string, v: number) => cost.set(m, (cost.get(m) ?? 0) + v)
+  for (const e of expenses) {
+    if (e.split === 'equal') {
+      const n = e.participants.length
+      if (n === 0) continue
+      const base = Math.floor(e.amount / n)
+      const remainder = e.amount - base * n
+      e.participants.forEach((p, i) => add(p, base + (i === 0 ? remainder : 0)))
+    } else {
+      for (const [m, owed] of Object.entries(e.split)) add(m, owed)
+    }
+  }
+  return cost
+}
+
+function costRow(member: string, cost: number, currency: string): Block {
+  return {
+    height: 19,
+    paint(ctx, y) {
+      ctx.font = `500 13px ${FONT_SANS}`
+      ctx.fillStyle = INK
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillText(member, PAD_X, y + 1)
+
+      ctx.font = `600 12.5px ${FONT_MONO}`
+      ctx.fillStyle = cost > 0 ? INK : SUBTLE
+      ctx.textAlign = 'right'
+      ctx.fillText(formatAmount(cost, currency), W - PAD_X, y + 1)
+    },
+  }
+}
+
+// Left-aligned, wrapped explanatory caption (e.g. under a section).
+function captionLine(text: string, mctx: CanvasRenderingContext2D): Block {
+  const font = `italic 500 11px ${FONT_DISPLAY}`
+  const lineH = 15
+  const maxW = W - PAD_X * 2
+  mctx.font = font
+  const lines = wrapText(mctx, text, maxW)
+  return {
+    height: lines.length * lineH,
+    paint(ctx, y) {
+      ctx.font = font
+      ctx.fillStyle = MUTED
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      lines.forEach((ln, i) => ctx.fillText(ln, PAD_X, y + i * lineH))
     },
   }
 }
