@@ -12,7 +12,7 @@ import {
 } from '../lib/api'
 import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settle'
 import { avatarUrl } from '../lib/avatar'
-import type { Group } from '../types'
+import type { ExpenseEvent, Group } from '../types'
 import ConfirmModal from '../components/ConfirmModal'
 import ShareImageModal from '../components/ShareImageModal'
 import { renderReceipt } from '../lib/receipt'
@@ -44,6 +44,19 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   // sub-minute precision for the common "just log it" path.
   const [dateStr, setDateStr] = useState(() => toLocalInputValue(new Date()))
   const [dateEdited, setDateEdited] = useState(false)
+
+  // Voiding an expense is destructive (it drops it out of the settlement),
+  // so route the inline button through a confirmation rather than firing
+  // immediately. We stash the whole event so the dialog can show what's
+  // about to be struck.
+  const [voidTarget, setVoidTarget] = useState<ExpenseEvent | null>(null)
+  // Editing an expense. The ledger is append-only, so an "edit" is really a
+  // void-of-the-original plus a fresh expense carrying the new figures — see
+  // saveEdit. Only the date and amount are editable; payer / participants /
+  // note ride along unchanged.
+  const [editTarget, setEditTarget] = useState<ExpenseEvent | null>(null)
+  const [editAmountStr, setEditAmountStr] = useState('')
+  const [editDateStr, setEditDateStr] = useState('')
 
   async function refresh() {
     setError(null)
@@ -230,8 +243,56 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     try {
       await postEvent(group.id, makeVoid({ targetId }))
       await refresh()
+      setVoidTarget(null)
     } catch (err: any) {
       setError(err?.message || 'Failed to void')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Seed the edit dialog from an existing expense. Amount is stored in minor
+  // units, so convert back to the human-typed major form; date comes from
+  // the event's ISO timestamp.
+  function openEdit(e: ExpenseEvent) {
+    if (!group) return
+    setEditTarget(e)
+    setEditAmountStr(amountToInput(e.amount, group.currency))
+    setEditDateStr(toLocalInputValue(new Date(e.ts)))
+    setError(null)
+  }
+
+  async function saveEdit() {
+    if (!group || !editTarget) return
+    const amount = parseAmount(editAmountStr, group.currency)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Amount must be a positive number')
+      return
+    }
+    const ts = editDateStr ? new Date(editDateStr).getTime() : NaN
+    if (!Number.isFinite(ts)) {
+      setError('Pick a valid date')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      // Append-only ledger: an edit = void the original, then re-post it with
+      // the new amount / date. Void first so that a mid-way failure leaves the
+      // expense missing (visible, re-addable) rather than double-counted.
+      await postEvent(group.id, makeVoid({ targetId: editTarget.id }))
+      await postEvent(group.id, makeExpense({
+        payer: editTarget.payer,
+        amount,
+        participants: editTarget.participants,
+        split: editTarget.split,
+        note: editTarget.note,
+        ts,
+      }))
+      await refresh()
+      setEditTarget(null)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save edit')
     } finally {
       setBusy(false)
     }
@@ -543,6 +604,10 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           // events they themselves authored. Server enforces; this is
           // just the affordance. A finalized group freezes voiding too.
           const canVoid = (isOwner || e.author === me) && !isVoided && !isFinalized
+          // Editing re-posts the expense as the payer, and the server only
+          // lets you post expenses you paid — so the edit affordance is the
+          // author's alone (owner can void someone else's, but not edit it).
+          const canEdit = e.author === me && !isVoided && !isFinalized
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
               <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
@@ -555,10 +620,20 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                 </p>
               </div>
               <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
+              {canEdit && (
+                <button
+                  className="edit-ghost"
+                  onClick={() => openEdit(e)}
+                  disabled={busy}
+                  style={{ marginLeft: 4 }}
+                >
+                  edit
+                </button>
+              )}
               {canVoid && (
                 <button
                   className="danger-ghost"
-                  onClick={() => voidEvent(e.id)}
+                  onClick={() => setVoidTarget(e)}
                   disabled={busy}
                   style={{ marginLeft: 4 }}
                 >
@@ -633,8 +708,98 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         onCancel={() => { if (!busy) setConfirmReopen(false) }}
         onConfirm={handleReopen}
       />
+
+      <ConfirmModal
+        open={voidTarget != null}
+        title="Void this expense"
+        body={
+          voidTarget ? (
+            <>
+              <p>
+                Strike <strong>{voidTarget.payer}</strong>'s{' '}
+                <strong>{formatAmount(voidTarget.amount, group.currency)}</strong>
+                {voidTarget.note ? <> for <strong>{voidTarget.note}</strong></> : null}{' '}
+                from the ledger? It stays in the activity log as a voided row, but
+                drops out of the settlement.
+              </p>
+              <p className="muted" style={{ marginBottom: 0 }}>
+                To change just the date or amount, use <em>edit</em> instead — it keeps
+                the same participants.
+              </p>
+            </>
+          ) : null
+        }
+        confirmLabel="Void it"
+        cancelLabel="Keep it"
+        tone="danger"
+        busy={busy}
+        onCancel={() => { if (!busy) setVoidTarget(null) }}
+        onConfirm={() => { if (voidTarget) voidEvent(voidTarget.id) }}
+      />
+
+      {editTarget && (
+        <div className="modal-backdrop" onClick={() => { if (!busy) setEditTarget(null) }}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-modal-title"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 id="edit-modal-title" className="modal-title">Edit expense</h3>
+            <div className="modal-body">
+              <p className="muted" style={{ marginTop: 0 }}>
+                Adjust the amount or date. Participants
+                {editTarget.note ? <> and the note (<strong>{editTarget.note}</strong>)</> : null}
+                {' '}stay the same — the old entry is voided and replaced.
+              </p>
+              <div style={{ marginBottom: 14 }}>
+                <span className="field-label">Amount ({group.currency})</span>
+                <input
+                  className="amount"
+                  inputMode="decimal"
+                  value={editAmountStr}
+                  onChange={e => setEditAmountStr(e.target.value)}
+                />
+              </div>
+              <div>
+                <span className="field-label">Date</span>
+                <input
+                  type="datetime-local"
+                  className="date-input"
+                  value={editDateStr}
+                  max={toLocalInputValue(new Date())}
+                  onChange={e => setEditDateStr(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditTarget(null)}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={saveEdit} disabled={busy}>
+                {busy ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
+}
+
+// Inverse of parseAmount: take a stored minor-unit amount back to the
+// human-typed major form for pre-filling the edit field. Mirrors the
+// zero-decimal currency set used in settle.ts.
+function amountToInput(minor: number, currency: string): string {
+  const zeroDecimal = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
+  if (zeroDecimal.has(currency.toUpperCase())) return String(minor)
+  return (minor / 100).toFixed(2)
 }
 
 function fmtDate(iso: string): string {

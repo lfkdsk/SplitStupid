@@ -351,6 +351,21 @@ button.danger-ghost:hover:not(:disabled) {
   transform: none;
 }
 
+button.edit-ghost {
+  background: transparent;
+  color: var(--fg-muted);
+  box-shadow: none;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+button.edit-ghost:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--fg);
+  transform: none;
+}
+
 button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
