@@ -620,25 +620,27 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                 </p>
               </div>
               <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
-              {canEdit && (
-                <button
-                  className="edit-ghost"
-                  onClick={() => openEdit(e)}
-                  disabled={busy}
-                  style={{ marginLeft: 4 }}
-                >
-                  edit
-                </button>
-              )}
-              {canVoid && (
-                <button
-                  className="danger-ghost"
-                  onClick={() => setVoidTarget(e)}
-                  disabled={busy}
-                  style={{ marginLeft: 4 }}
-                >
-                  void
-                </button>
+              {(canEdit || canVoid) && (
+                <div className="event-actions">
+                  {canEdit && (
+                    <button
+                      className="edit-ghost"
+                      onClick={() => openEdit(e)}
+                      disabled={busy}
+                    >
+                      edit
+                    </button>
+                  )}
+                  {canVoid && (
+                    <button
+                      className="danger-ghost"
+                      onClick={() => setVoidTarget(e)}
+                      disabled={busy}
+                    >
+                      void
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )

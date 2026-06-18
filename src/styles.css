@@ -746,9 +746,14 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 
 /* Events */
 .event {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "avatar body amount"
+    "avatar body actions";
+  column-gap: 14px;
+  row-gap: 6px;
+  align-items: start;
   padding: 16px 0;
   border-bottom: 1px dashed var(--border-strong);
 }
@@ -756,6 +761,7 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 .event:first-child { padding-top: 4px; }
 
 .event-avatar {
+  grid-area: avatar;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -763,7 +769,7 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 }
 
 .event-body {
-  flex: 1;
+  grid-area: body;
   min-width: 0;
 }
 
@@ -784,13 +790,24 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 }
 
 .event-amount {
+  grid-area: amount;
+  justify-self: end;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: var(--fg);
   font-size: 14px;
   white-space: nowrap;
-  flex-shrink: 0;
+}
+
+/* Action buttons (edit / void) sit under the amount, right-aligned, so they
+   never squeeze the body's "split among …" line on a narrow phone. */
+.event-actions {
+  grid-area: actions;
+  justify-self: end;
+  align-self: end;
+  display: flex;
+  gap: 4px;
 }
 
 .event.voided { opacity: 0.4; }
