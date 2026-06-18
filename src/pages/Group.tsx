@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
+  addMember,
   finalizeGroup,
   joinGroup,
+  listFriends,
   makeExpense,
   makeVoid,
   postEvent,
@@ -25,6 +27,12 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [joining, setJoining] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Owner-only "add a past split-mate" picker. Friends are fetched lazily the
+  // first time the panel opens; `addingFriend` holds the login mid-request so
+  // its chip can show a spinner without blocking the others.
+  const [friendsOpen, setFriendsOpen] = useState(false)
+  const [friends, setFriends] = useState<string[] | null>(null)
+  const [addingFriend, setAddingFriend] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [postcardOpen, setPostcardOpen] = useState(false)
   // Two-step finalize / reopen confirmation. We track each separately so
@@ -119,6 +127,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     group.events.filter(e => e.type === 'void').map(e => (e as any).targetId),
   )
   const shareUrl = `${window.location.origin}/#/g/${group.id}`
+  // Friends not already on the roster — the only ones worth offering to add.
+  const availableFriends = (friends ?? []).filter(f => !group.members.includes(f))
 
   async function handleJoin() {
     setJoining(true)
@@ -159,6 +169,34 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       setError(err?.message || 'Failed to remove member')
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Toggle the friends picker; fetch the candidate list on first open.
+  async function toggleFriends() {
+    const next = !friendsOpen
+    setFriendsOpen(next)
+    if (next && friends == null) {
+      try {
+        setFriends(await listFriends())
+      } catch (err: any) {
+        setFriends([])
+        setError(err?.message || 'Failed to load friends')
+      }
+    }
+  }
+
+  async function addFriend(login: string) {
+    if (!group) return
+    setAddingFriend(login)
+    setError(null)
+    try {
+      await addMember(group.id, login)
+      await refresh()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add member')
+    } finally {
+      setAddingFriend(null)
     }
   }
 
@@ -382,6 +420,17 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               <ShareIcon /> {shareOpen ? 'Hide share' : 'Share to invite'}
             </button>
           )}
+          {isOwner && !isFinalized && (
+            <button
+              type="button"
+              className="secondary"
+              style={{ flex: '0 0 auto' }}
+              onClick={toggleFriends}
+              title="Add someone you've split with before"
+            >
+              <UsersIcon /> {friendsOpen ? 'Hide friends' : 'Add a friend'}
+            </button>
+          )}
           <button
             type="button"
             className="secondary"
@@ -446,6 +495,43 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           </button>
           <p className="subtle muted" style={{ textAlign: 'center', maxWidth: 280, margin: 0 }}>
             Anyone who scans, signs in with GitHub, and taps <em>Join</em> is added to the roster.
+          </p>
+        </div>
+      )}
+
+      {friendsOpen && isOwner && !isFinalized && (
+        <div className="card friends-panel">
+          <p className="section-title" style={{ margin: '0 0 4px' }}>
+            Add someone you've split with
+          </p>
+          {friends == null ? (
+            <p className="empty">Loading…</p>
+          ) : availableFriends.length === 0 ? (
+            <p className="empty muted" style={{ margin: 0 }}>
+              {friends.length === 0
+                ? "No past split-mates yet — share the link to bring people in."
+                : 'Everyone you\'ve split with is already here.'}
+            </p>
+          ) : (
+            <div className="chip-row">
+              {availableFriends.map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  className="friend-add-chip"
+                  onClick={() => addFriend(f)}
+                  disabled={addingFriend != null}
+                  title={`Add ${f}`}
+                >
+                  <img src={avatarUrl(f, 36)} alt="" />
+                  {f}
+                  <span className="friend-add-plus">{addingFriend === f ? '…' : '+'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="subtle muted" style={{ margin: '4px 0 0', maxWidth: 320 }}>
+            They're added to the roster right away and can leave anytime.
           </p>
         </div>
       )}
@@ -823,6 +909,17 @@ function ShareIcon() {
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M9.5 4.5L7 2L4.5 4.5M7 2v7M3 8.5v2.25A1.25 1.25 0 0 0 4.25 12h5.5A1.25 1.25 0 0 0 11 10.75V8.5"
         stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function UsersIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <circle cx="5.25" cy="4.5" r="2.1" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M1.5 11.5c0-2 1.7-3.2 3.75-3.2 1 0 1.9.28 2.6.78"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <path d="M10.5 6.5v4M8.5 8.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
     </svg>
   )
 }

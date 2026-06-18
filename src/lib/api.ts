@@ -78,6 +78,19 @@ export const removeMember = (groupId: string, login: string): Promise<{ ok: true
     { method: 'DELETE' },
   )
 
+// Logins the signed-in user has shared at least one group with — the
+// candidate list for owner's "add a past split-mate" picker.
+export const listFriends = (): Promise<string[]> =>
+  call<string[]>('/friends')
+
+// Owner-only: directly add a past split-mate to the group. Worker gates
+// this on (owner ∧ login-is-a-prior-split-mate); see addMember there.
+export const addMember = (groupId: string, login: string): Promise<{ ok: true }> =>
+  call<{ ok: true }>(
+    `/groups/${encodeURIComponent(groupId)}/members`,
+    { method: 'POST', body: JSON.stringify({ login }) },
+  )
+
 // ---------------------------------------------------------------------------
 // Events
 

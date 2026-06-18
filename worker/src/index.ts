@@ -106,6 +106,12 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     return new Response('method not allowed', { status: 405 })
   }
 
+  // GET /friends — logins you've shared at least one group with.
+  if (path === '/friends') {
+    if (method === 'GET') return await listFriends(env, me)
+    return new Response('method not allowed', { status: 405 })
+  }
+
   // /groups/:id ...
   const groupMatch = path.match(/^\/groups\/([A-Za-z0-9]+)(?:\/(.*))?$/)
   if (groupMatch) {
@@ -128,6 +134,11 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
 
     if (rest === 'events' && method === 'POST') {
       return await postEvent(env, me, groupId, await request.json())
+    }
+
+    // POST /groups/:id/members — owner pulls in a past split-mate.
+    if (rest === 'members' && method === 'POST') {
+      return await addMember(env, me, groupId, await request.json())
     }
 
     // /groups/:id/members/:login
@@ -354,6 +365,59 @@ async function joinGroup(env: Env, me: string, id: string): Promise<Response> {
   await env.DB.prepare(
     `INSERT OR IGNORE INTO members (group_id, login, joined_at) VALUES (?,?,?)`,
   ).bind(id, me, Date.now()).run()
+
+  return json({ ok: true })
+}
+
+// GET /friends — the set of logins `me` has shared at least one group with.
+// Self-join on members: any other login that sits in a group I'm also in.
+// This is the candidate list for "pull a past split-mate into a group".
+async function listFriends(env: Env, me: string): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT DISTINCT m2.login AS login
+     FROM members m1
+     JOIN members m2 ON m1.group_id = m2.group_id
+     WHERE m1.login = ?1 AND m2.login <> ?1
+     ORDER BY m2.login COLLATE NOCASE`,
+  ).bind(me).all<{ login: string }>()
+  return json((rows.results || []).map(r => r.login))
+}
+
+// POST /groups/:id/members — body: { login }. Owner-only direct-add of a
+// past split-mate. The login must be someone the owner has actually shared
+// a group with before; this keeps the endpoint from becoming an
+// add-any-GitHub-user-by-name primitive (which would let an owner stuff a
+// stranger's login into a group's roster). The added member is not asked to
+// consent, but they'll see the group in their list and can self-leave.
+async function addMember(env: Env, me: string, id: string, body: any): Promise<Response> {
+  const login = stringField(body?.login, 'login', 1, 39) // GH login max length
+  if (typeof login !== 'string') return login
+
+  const group = await env.DB.prepare(
+    `SELECT owner_login, finalized_at FROM groups WHERE id = ?`,
+  ).bind(id).first<{ owner_login: string; finalized_at: number | null }>()
+  if (!group) return json({ error: 'group not found' }, 404)
+  if (group.owner_login !== me) {
+    return json({ error: 'only the group owner can add members' }, 403)
+  }
+  if (group.finalized_at != null) {
+    return json({ error: 'group is finalized; reopen it before changing membership' }, 409)
+  }
+
+  // Friendship gate: the login has to share some prior group with the owner.
+  const friend = await env.DB.prepare(
+    `SELECT 1 FROM members m1
+     JOIN members m2 ON m1.group_id = m2.group_id
+     WHERE m1.login = ?1 AND m2.login = ?2 LIMIT 1`,
+  ).bind(me, login).first<{ 1: number }>()
+  if (!friend) {
+    return json({ error: 'you can only add people you\'ve split with before' }, 403)
+  }
+
+  // Idempotent: re-adding an existing member is a no-op.
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO members (group_id, login, joined_at) VALUES (?,?,?)`,
+  ).bind(id, login, Date.now()).run()
 
   return json({ ok: true })
 }

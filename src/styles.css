@@ -447,6 +447,54 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   box-shadow: none;
 }
 
+/* Owner's "add a past split-mate" panel */
+.friends-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Tappable chip that adds a friend to the roster. Mirrors .member-chip but
+   is a real button with a trailing + affordance. */
+.friend-add-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 2px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg);
+  box-shadow: none;
+}
+.friend-add-chip:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  border-color: var(--accent);
+  color: var(--fg);
+  transform: none;
+  box-shadow: none;
+}
+.friend-add-chip img {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+.friend-add-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 13px;
+  line-height: 1;
+  margin-left: 2px;
+}
+
 /* Toggleable participant pills */
 .check-pill {
   display: inline-flex;
