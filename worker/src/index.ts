@@ -115,6 +115,12 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     return new Response('method not allowed', { status: 405 })
   }
 
+  // GET /friends — logins you've shared at least one group with.
+  if (path === '/friends') {
+    if (method === 'GET') return await listFriends(env, me)
+    return new Response('method not allowed', { status: 405 })
+  }
+
   // /groups/:id ...
   const groupMatch = path.match(/^\/groups\/([A-Za-z0-9]+)(?:\/(.*))?$/)
   if (groupMatch) {
@@ -137,6 +143,11 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
 
     if (rest === 'events' && method === 'POST') {
       return await postEvent(env, me, groupId, await request.json())
+    }
+
+    // POST /groups/:id/members — owner pulls in a past split-mate.
+    if (rest === 'members' && method === 'POST') {
+      return await addMember(env, me, groupId, await request.json())
     }
 
     // /groups/:id/members/:login
@@ -390,6 +401,59 @@ async function joinGroup(env: Env, me: string, id: string): Promise<Response> {
   return json({ ok: true })
 }
 
+// GET /friends — the set of logins `me` has shared at least one group with.
+// Self-join on members: any other login that sits in a group I'm also in.
+// This is the candidate list for "pull a past split-mate into a group".
+async function listFriends(env: Env, me: string): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT DISTINCT m2.login AS login
+     FROM members m1
+     JOIN members m2 ON m1.group_id = m2.group_id
+     WHERE m1.login = ?1 AND m2.login <> ?1
+     ORDER BY m2.login COLLATE NOCASE`,
+  ).bind(me).all<{ login: string }>()
+  return json((rows.results || []).map(r => r.login))
+}
+
+// POST /groups/:id/members — body: { login }. Owner-only direct-add of a
+// past split-mate. The login must be someone the owner has actually shared
+// a group with before; this keeps the endpoint from becoming an
+// add-any-GitHub-user-by-name primitive (which would let an owner stuff a
+// stranger's login into a group's roster). The added member is not asked to
+// consent, but they'll see the group in their list and can self-leave.
+async function addMember(env: Env, me: string, id: string, body: any): Promise<Response> {
+  const login = stringField(body?.login, 'login', 1, 39) // GH login max length
+  if (typeof login !== 'string') return login
+
+  const group = await env.DB.prepare(
+    `SELECT owner_login, finalized_at FROM groups WHERE id = ?`,
+  ).bind(id).first<{ owner_login: string; finalized_at: number | null }>()
+  if (!group) return json({ error: 'group not found' }, 404)
+  if (group.owner_login !== me) {
+    return json({ error: 'only the group owner can add members' }, 403)
+  }
+  if (group.finalized_at != null) {
+    return json({ error: 'group is finalized; reopen it before changing membership' }, 409)
+  }
+
+  // Friendship gate: the login has to share some prior group with the owner.
+  const friend = await env.DB.prepare(
+    `SELECT 1 FROM members m1
+     JOIN members m2 ON m1.group_id = m2.group_id
+     WHERE m1.login = ?1 AND m2.login = ?2 LIMIT 1`,
+  ).bind(me, login).first<{ 1: number }>()
+  if (!friend) {
+    return json({ error: 'you can only add people you\'ve split with before' }, 403)
+  }
+
+  // Idempotent: re-adding an existing member is a no-op.
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO members (group_id, login, joined_at) VALUES (?,?,?)`,
+  ).bind(id, login, Date.now()).run()
+
+  return json({ ok: true })
+}
+
 // POST /groups/:id/finalize — owner only. Locks the ledger; subsequent
 // expense / void / member-change requests get a 409. Idempotent: stamping
 // an already-finalized group is a no-op (we keep the original timestamp).
@@ -492,6 +556,11 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     return json({ error: 'type must be "expense" or "void"' }, 400)
   }
 
+  // Event timestamp. Defaults to "now"; an expense may carry a caller-
+  // supplied `ts` (unix ms) to backdate it — the add-expense date picker.
+  // Voids are always stamped now (no reason to backdate an audit row).
+  let ts = Date.now()
+
   let payload: Record<string, unknown>
   if (type === 'expense') {
     const payer = body.payer
@@ -517,6 +586,16 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     if (split !== 'equal' && (typeof split !== 'object' || split === null)) {
       return json({ error: 'split must be "equal" or {login: amount} map' }, 400)
     }
+    // Optional backdate. Must be a sane positive unix-ms integer. We don't
+    // cap the future here: the client sends an absolute instant and a hard
+    // "<= now" check would spuriously reject the default value under normal
+    // client/server clock skew.
+    if (body.ts !== undefined) {
+      if (typeof body.ts !== 'number' || !Number.isInteger(body.ts) || body.ts <= 0) {
+        return json({ error: 'ts must be a positive unix-ms integer' }, 400)
+      }
+      ts = body.ts
+    }
     payload = { payer, amount, participants, split }
     if (typeof note === 'string' && note.trim()) payload.note = note.trim()
   } else {
@@ -537,15 +616,14 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
   }
 
   const eventId = randomId(12)
-  const now = Date.now()
   await env.DB.prepare(
     `INSERT INTO events (id, group_id, type, payload, author_login, ts) VALUES (?,?,?,?,?,?)`,
-  ).bind(eventId, id, type, JSON.stringify(payload), me, now).run()
+  ).bind(eventId, id, type, JSON.stringify(payload), me, ts).run()
 
   return json({
     id: eventId,
     type,
-    ts: new Date(now).toISOString(),
+    ts: new Date(ts).toISOString(),
     author: me,
     ...payload,
   }, 201)

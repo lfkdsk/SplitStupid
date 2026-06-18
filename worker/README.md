@@ -31,10 +31,12 @@ identity via GitHub's `/user` endpoint.
 | GET    | `/healthz`                 |                                    | No auth.                                         |
 | GET    | `/groups`                  |                                    | Owned ∪ joined for the auth'd user.              |
 | POST   | `/groups`                  | `{name, currency}`                 | Creator becomes owner + sole member.             |
+| GET    | `/friends`                 |                                    | Logins you've shared ≥1 group with.              |
 | GET    | `/groups/:id`              |                                    | Full group (meta, members, events).              |
 | DELETE | `/groups/:id`              |                                    | Owner only. Cascades to members + events.        |
 | POST   | `/groups/:id/join`         |                                    | Idempotent self-add to members.                  |
-| POST   | `/groups/:id/leave`        |                                    | Owner forbidden; must DELETE the group instead.  |
+| POST   | `/groups/:id/members`      | `{login}`                          | Owner only. `login` must be a prior split-mate.  |
+| DELETE | `/groups/:id/members/:login` |                                  | Owner kicks, or member self-leaves.              |
 | POST   | `/groups/:id/events`       | `{type, ...}`                      | Member only. Voids gated on (owner ∨ author).    |
 
 Event payloads:

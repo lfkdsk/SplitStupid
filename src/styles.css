@@ -270,6 +270,18 @@ input.amount {
   font-weight: 500;
 }
 
+/* Date picker — mono digits read as a timestamp, matching the ledger feel.
+   The native calendar glyph already follows `color-scheme` for visibility. */
+input.date-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+input.date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.65;
+}
+input.date-input::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
 /* Buttons — primary is cinnabar (the brand action color); secondary
    is outlined ink; ghost is text only. The accent-as-primary pulls the
    eye to the one CTA on each screen. */
@@ -336,6 +348,21 @@ button.danger-ghost {
 
 button.danger-ghost:hover:not(:disabled) {
   background: var(--negative-bg);
+  transform: none;
+}
+
+button.edit-ghost {
+  background: transparent;
+  color: var(--fg-muted);
+  box-shadow: none;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+button.edit-ghost:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--fg);
   transform: none;
 }
 
@@ -418,6 +445,54 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   color: var(--negative);
   transform: none;
   box-shadow: none;
+}
+
+/* Owner's "add a past split-mate" panel */
+.friends-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Tappable chip that adds a friend to the roster. Mirrors .member-chip but
+   is a real button with a trailing + affordance. */
+.friend-add-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 2px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg);
+  box-shadow: none;
+}
+.friend-add-chip:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  border-color: var(--accent);
+  color: var(--fg);
+  transform: none;
+  box-shadow: none;
+}
+.friend-add-chip img {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+.friend-add-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 13px;
+  line-height: 1;
+  margin-left: 2px;
 }
 
 /* Toggleable participant pills */
@@ -719,9 +794,14 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 
 /* Events */
 .event {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "avatar body amount"
+    "avatar body actions";
+  column-gap: 14px;
+  row-gap: 6px;
+  align-items: start;
   padding: 16px 0;
   border-bottom: 1px dashed var(--border-strong);
 }
@@ -729,6 +809,7 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 .event:first-child { padding-top: 4px; }
 
 .event-avatar {
+  grid-area: avatar;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -736,7 +817,7 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 }
 
 .event-body {
-  flex: 1;
+  grid-area: body;
   min-width: 0;
 }
 
@@ -757,13 +838,24 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 }
 
 .event-amount {
+  grid-area: amount;
+  justify-self: end;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: var(--fg);
   font-size: 14px;
   white-space: nowrap;
-  flex-shrink: 0;
+}
+
+/* Action buttons (edit / void) sit under the amount, right-aligned, so they
+   never squeeze the body's "split among …" line on a narrow phone. */
+.event-actions {
+  grid-area: actions;
+  justify-self: end;
+  align-self: end;
+  display: flex;
+  gap: 4px;
 }
 
 .event.voided { opacity: 0.4; }

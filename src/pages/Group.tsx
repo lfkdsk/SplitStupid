@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
+  addMember,
   finalizeGroup,
   joinGroup,
+  listFriends,
   makeExpense,
   makeVoid,
   postEvent,
@@ -12,7 +14,7 @@ import {
 } from '../lib/api'
 import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settle'
 import { avatarUrl } from '../lib/avatar'
-import type { Group } from '../types'
+import type { ExpenseEvent, Group } from '../types'
 import ConfirmModal from '../components/ConfirmModal'
 import ShareImageModal from '../components/ShareImageModal'
 import { renderReceipt } from '../lib/receipt'
@@ -25,6 +27,12 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [joining, setJoining] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Owner-only "add a past split-mate" picker. Friends are fetched lazily the
+  // first time the panel opens; `addingFriend` holds the login mid-request so
+  // its chip can show a spinner without blocking the others.
+  const [friendsOpen, setFriendsOpen] = useState(false)
+  const [friends, setFriends] = useState<string[] | null>(null)
+  const [addingFriend, setAddingFriend] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [postcardOpen, setPostcardOpen] = useState(false)
   // Two-step finalize / reopen confirmation. We track each separately so
@@ -38,6 +46,25 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [amountStr, setAmountStr] = useState('')
   const [note, setNote] = useState('')
   const [participants, setParticipants] = useState<string[]>([])
+  // Expense date. Seeded to "now"; the user can pick another date. We only
+  // send a `ts` override to the server once they've actually touched the
+  // field — otherwise the server stamps now itself, preserving full
+  // sub-minute precision for the common "just log it" path.
+  const [dateStr, setDateStr] = useState(() => toLocalInputValue(new Date()))
+  const [dateEdited, setDateEdited] = useState(false)
+
+  // Voiding an expense is destructive (it drops it out of the settlement),
+  // so route the inline button through a confirmation rather than firing
+  // immediately. We stash the whole event so the dialog can show what's
+  // about to be struck.
+  const [voidTarget, setVoidTarget] = useState<ExpenseEvent | null>(null)
+  // Editing an expense. The ledger is append-only, so an "edit" is really a
+  // void-of-the-original plus a fresh expense carrying the new figures — see
+  // saveEdit. Only the date and amount are editable; payer / participants /
+  // note ride along unchanged.
+  const [editTarget, setEditTarget] = useState<ExpenseEvent | null>(null)
+  const [editAmountStr, setEditAmountStr] = useState('')
+  const [editDateStr, setEditDateStr] = useState('')
 
   async function refresh() {
     setError(null)
@@ -100,6 +127,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     group.events.filter(e => e.type === 'void').map(e => (e as any).targetId),
   )
   const shareUrl = `${window.location.origin}/#/g/${group.id}`
+  // Friends not already on the roster — the only ones worth offering to add.
+  const availableFriends = (friends ?? []).filter(f => !group.members.includes(f))
 
   async function handleJoin() {
     setJoining(true)
@@ -140,6 +169,34 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       setError(err?.message || 'Failed to remove member')
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Toggle the friends picker; fetch the candidate list on first open.
+  async function toggleFriends() {
+    const next = !friendsOpen
+    setFriendsOpen(next)
+    if (next && friends == null) {
+      try {
+        setFriends(await listFriends())
+      } catch (err: any) {
+        setFriends([])
+        setError(err?.message || 'Failed to load friends')
+      }
+    }
+  }
+
+  async function addFriend(login: string) {
+    if (!group) return
+    setAddingFriend(login)
+    setError(null)
+    try {
+      await addMember(group.id, login)
+      await refresh()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add member')
+    } finally {
+      setAddingFriend(null)
     }
   }
 
@@ -185,6 +242,15 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       setError('Pick at least one participant')
       return
     }
+    let ts: number | undefined
+    if (dateEdited) {
+      const parsed = dateStr ? new Date(dateStr).getTime() : NaN
+      if (!Number.isFinite(parsed)) {
+        setError('Pick a valid date')
+        return
+      }
+      ts = parsed
+    }
     setBusy(true)
     setError(null)
     try {
@@ -194,10 +260,13 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         participants,
         split: 'equal',
         note: note.trim() || undefined,
+        ts,
       }))
       await refresh()
       setAmountStr('')
       setNote('')
+      setDateStr(toLocalInputValue(new Date()))
+      setDateEdited(false)
     } catch (err: any) {
       setError(err?.message || 'Failed to save')
     } finally {
@@ -212,8 +281,56 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     try {
       await postEvent(group.id, makeVoid({ targetId }))
       await refresh()
+      setVoidTarget(null)
     } catch (err: any) {
       setError(err?.message || 'Failed to void')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Seed the edit dialog from an existing expense. Amount is stored in minor
+  // units, so convert back to the human-typed major form; date comes from
+  // the event's ISO timestamp.
+  function openEdit(e: ExpenseEvent) {
+    if (!group) return
+    setEditTarget(e)
+    setEditAmountStr(amountToInput(e.amount, group.currency))
+    setEditDateStr(toLocalInputValue(new Date(e.ts)))
+    setError(null)
+  }
+
+  async function saveEdit() {
+    if (!group || !editTarget) return
+    const amount = parseAmount(editAmountStr, group.currency)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Amount must be a positive number')
+      return
+    }
+    const ts = editDateStr ? new Date(editDateStr).getTime() : NaN
+    if (!Number.isFinite(ts)) {
+      setError('Pick a valid date')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      // Append-only ledger: an edit = void the original, then re-post it with
+      // the new amount / date. Void first so that a mid-way failure leaves the
+      // expense missing (visible, re-addable) rather than double-counted.
+      await postEvent(group.id, makeVoid({ targetId: editTarget.id }))
+      await postEvent(group.id, makeExpense({
+        payer: editTarget.payer,
+        amount,
+        participants: editTarget.participants,
+        split: editTarget.split,
+        note: editTarget.note,
+        ts,
+      }))
+      await refresh()
+      setEditTarget(null)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save edit')
     } finally {
       setBusy(false)
     }
@@ -303,6 +420,17 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               <ShareIcon /> {shareOpen ? 'Hide share' : 'Share to invite'}
             </button>
           )}
+          {isOwner && !isFinalized && (
+            <button
+              type="button"
+              className="secondary"
+              style={{ flex: '0 0 auto' }}
+              onClick={toggleFriends}
+              title="Add someone you've split with before"
+            >
+              <UsersIcon /> {friendsOpen ? 'Hide friends' : 'Add a friend'}
+            </button>
+          )}
           <button
             type="button"
             className="secondary"
@@ -371,6 +499,43 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         </div>
       )}
 
+      {friendsOpen && isOwner && !isFinalized && (
+        <div className="card friends-panel">
+          <p className="section-title" style={{ margin: '0 0 4px' }}>
+            Add someone you've split with
+          </p>
+          {friends == null ? (
+            <p className="empty">Loading…</p>
+          ) : availableFriends.length === 0 ? (
+            <p className="empty muted" style={{ margin: 0 }}>
+              {friends.length === 0
+                ? "No past split-mates yet — share the link to bring people in."
+                : 'Everyone you\'ve split with is already here.'}
+            </p>
+          ) : (
+            <div className="chip-row">
+              {availableFriends.map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  className="friend-add-chip"
+                  onClick={() => addFriend(f)}
+                  disabled={addingFriend != null}
+                  title={`Add ${f}`}
+                >
+                  <img src={avatarUrl(f, 36)} alt="" />
+                  {f}
+                  <span className="friend-add-plus">{addingFriend === f ? '…' : '+'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="subtle muted" style={{ margin: '4px 0 0', maxWidth: 320 }}>
+            They're added to the roster right away and can leave anytime.
+          </p>
+        </div>
+      )}
+
       {!isMember && !isFinalized && (
         <div className="card join-cta">
           <h3 className="section-title lg" style={{ marginBottom: 6 }}>Join this group</h3>
@@ -406,6 +571,16 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               value={note}
               onChange={e => setNote(e.target.value)}
             />
+            <div>
+              <span className="field-label">Date</span>
+              <input
+                type="datetime-local"
+                className="date-input"
+                value={dateStr}
+                max={toLocalInputValue(new Date())}
+                onChange={e => { setDateStr(e.target.value); setDateEdited(true) }}
+              />
+            </div>
             <div>
               <span className="field-label">Split equally among</span>
               <div className="chip-row">
@@ -515,6 +690,10 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           // events they themselves authored. Server enforces; this is
           // just the affordance. A finalized group freezes voiding too.
           const canVoid = (isOwner || e.author === me) && !isVoided && !isFinalized
+          // Editing re-posts the expense as the payer, and the server only
+          // lets you post expenses you paid — so the edit affordance is the
+          // author's alone (owner can void someone else's, but not edit it).
+          const canEdit = e.author === me && !isVoided && !isFinalized
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
               <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
@@ -527,15 +706,27 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                 </p>
               </div>
               <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
-              {canVoid && (
-                <button
-                  className="danger-ghost"
-                  onClick={() => voidEvent(e.id)}
-                  disabled={busy}
-                  style={{ marginLeft: 4 }}
-                >
-                  void
-                </button>
+              {(canEdit || canVoid) && (
+                <div className="event-actions">
+                  {canEdit && (
+                    <button
+                      className="edit-ghost"
+                      onClick={() => openEdit(e)}
+                      disabled={busy}
+                    >
+                      edit
+                    </button>
+                  )}
+                  {canVoid && (
+                    <button
+                      className="danger-ghost"
+                      onClick={() => setVoidTarget(e)}
+                      disabled={busy}
+                    >
+                      void
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )
@@ -605,8 +796,98 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         onCancel={() => { if (!busy) setConfirmReopen(false) }}
         onConfirm={handleReopen}
       />
+
+      <ConfirmModal
+        open={voidTarget != null}
+        title="Void this expense"
+        body={
+          voidTarget ? (
+            <>
+              <p>
+                Strike <strong>{voidTarget.payer}</strong>'s{' '}
+                <strong>{formatAmount(voidTarget.amount, group.currency)}</strong>
+                {voidTarget.note ? <> for <strong>{voidTarget.note}</strong></> : null}{' '}
+                from the ledger? It stays in the activity log as a voided row, but
+                drops out of the settlement.
+              </p>
+              <p className="muted" style={{ marginBottom: 0 }}>
+                To change just the date or amount, use <em>edit</em> instead — it keeps
+                the same participants.
+              </p>
+            </>
+          ) : null
+        }
+        confirmLabel="Void it"
+        cancelLabel="Keep it"
+        tone="danger"
+        busy={busy}
+        onCancel={() => { if (!busy) setVoidTarget(null) }}
+        onConfirm={() => { if (voidTarget) voidEvent(voidTarget.id) }}
+      />
+
+      {editTarget && (
+        <div className="modal-backdrop" onClick={() => { if (!busy) setEditTarget(null) }}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-modal-title"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 id="edit-modal-title" className="modal-title">Edit expense</h3>
+            <div className="modal-body">
+              <p className="muted" style={{ marginTop: 0 }}>
+                Adjust the amount or date. Participants
+                {editTarget.note ? <> and the note (<strong>{editTarget.note}</strong>)</> : null}
+                {' '}stay the same — the old entry is voided and replaced.
+              </p>
+              <div style={{ marginBottom: 14 }}>
+                <span className="field-label">Amount ({group.currency})</span>
+                <input
+                  className="amount"
+                  inputMode="decimal"
+                  value={editAmountStr}
+                  onChange={e => setEditAmountStr(e.target.value)}
+                />
+              </div>
+              <div>
+                <span className="field-label">Date</span>
+                <input
+                  type="datetime-local"
+                  className="date-input"
+                  value={editDateStr}
+                  max={toLocalInputValue(new Date())}
+                  onChange={e => setEditDateStr(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditTarget(null)}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={saveEdit} disabled={busy}>
+                {busy ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
+}
+
+// Inverse of parseAmount: take a stored minor-unit amount back to the
+// human-typed major form for pre-filling the edit field. Mirrors the
+// zero-decimal currency set used in settle.ts.
+function amountToInput(minor: number, currency: string): string {
+  const zeroDecimal = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
+  if (zeroDecimal.has(currency.toUpperCase())) return String(minor)
+  return (minor / 100).toFixed(2)
 }
 
 function fmtDate(iso: string): string {
@@ -614,11 +895,31 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+// Format a Date for a <input type="datetime-local">, whose value must be
+// "YYYY-MM-DDTHH:mm" in *local* time. toISOString() is UTC and would shift
+// the displayed clock, so build it from the local getters instead.
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function ShareIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M9.5 4.5L7 2L4.5 4.5M7 2v7M3 8.5v2.25A1.25 1.25 0 0 0 4.25 12h5.5A1.25 1.25 0 0 0 11 10.75V8.5"
         stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function UsersIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <circle cx="5.25" cy="4.5" r="2.1" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M1.5 11.5c0-2 1.7-3.2 3.75-3.2 1 0 1.9.28 2.6.78"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <path d="M10.5 6.5v4M8.5 8.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
     </svg>
   )
 }
