@@ -2,7 +2,7 @@
 // Stateless, no I/O, easy to unit test (and to re-run client-side every
 // render — the input set is small).
 
-import type { Balance, Event, ExpenseEvent, Member, Transfer } from '../types'
+import type { Balance, EditEvent, Event, ExpenseEvent, Member, Transfer } from '../types'
 
 // Walk the event log and return per-member running balance. Members
 // missing from the events list still appear (with zero) so the UI can
@@ -19,13 +19,7 @@ export function computeBalances(events: Event[], members: Member[]): Balance[] {
   const balances = new Map<Member, number>()
   for (const m of members) balances.set(m, 0)
 
-  const voided = collectVoided(events)
-
-  for (const e of events) {
-    if (e.type !== 'expense') continue
-    if (voided.has(e.id)) continue
-    applyExpense(balances, e)
-  }
+  for (const e of effectiveExpenses(events)) applyExpense(balances, e)
   return members.map(m => ({ member: m, balance: balances.get(m) ?? 0 }))
 }
 
@@ -33,6 +27,44 @@ function collectVoided(events: Event[]): Set<string> {
   const out = new Set<string>()
   for (const e of events) if (e.type === 'void') out.add(e.targetId)
   return out
+}
+
+// The latest edit per target expense, keyed by the edited expense's id.
+// "Latest" is by audit timestamp (the edit row's `ts`) so a re-edit wins;
+// ties fall to last-seen, which mirrors append order.
+export function latestEditByTarget(events: Event[]): Map<string, EditEvent> {
+  const out = new Map<string, EditEvent>()
+  for (const e of events) {
+    if (e.type !== 'edit') continue
+    const prev = out.get(e.targetId)
+    if (!prev || Date.parse(e.ts) >= Date.parse(prev.ts)) out.set(e.targetId, e)
+  }
+  return out
+}
+
+// The expense ledger as it effectively stands: voided expenses dropped, and
+// every surviving expense carrying the amount / date of its latest edit (if
+// any). Returned in original (append) order. This is the single view that
+// settlement, the real-cost breakdown, and the receipt all read from, so an
+// edited expense reads consistently everywhere without each consumer having
+// to re-derive the void+edit fold.
+export function effectiveExpenses(events: Event[]): ExpenseEvent[] {
+  const voided = collectVoided(events)
+  const edits = latestEditByTarget(events)
+  const out: ExpenseEvent[] = []
+  for (const e of events) {
+    if (e.type !== 'expense') continue
+    if (voided.has(e.id)) continue
+    const edit = edits.get(e.id)
+    out.push(edit ? applyEdit(e, edit) : e)
+  }
+  return out
+}
+
+// Fold an edit's new figures onto its target expense. Payer / participants /
+// split / note ride along unchanged — an edit only ever touches amount + date.
+export function applyEdit(e: ExpenseEvent, edit: EditEvent): ExpenseEvent {
+  return { ...e, amount: edit.amount, ts: new Date(edit.date).toISOString() }
 }
 
 function applyExpense(balances: Map<Member, number>, e: ExpenseEvent): void {

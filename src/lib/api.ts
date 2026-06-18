@@ -7,7 +7,7 @@
 // it to a GH login server-side; the frontend never has to think about
 // scopes, gist permissions, or who can read what.
 
-import type { ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from '../types'
+import type { EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from '../types'
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
 
@@ -116,12 +116,15 @@ export const addMember = (groupId: string, login: string): Promise<{ ok: true }>
 export type NewExpense = Omit<ExpenseEvent, 'id' | 'ts' | 'author'> & { ts?: number }
 /** Payload for a void — server fills in id, ts, author. */
 export type NewVoid = Omit<VoidEvent, 'id' | 'ts' | 'author'>
+/** Payload for an edit — server fills in id, ts (audit), author. `amount`
+ *  and `date` are the expense's new figures; `targetId` is the expense edited. */
+export type NewEdit = Omit<EditEvent, 'id' | 'ts' | 'author'>
 
 export const postEvent = (
   groupId: string,
-  event: NewExpense | NewVoid,
-): Promise<ExpenseEvent | VoidEvent> =>
-  call<ExpenseEvent | VoidEvent>(
+  event: NewExpense | NewVoid | NewEdit,
+): Promise<ExpenseEvent | VoidEvent | EditEvent> =>
+  call<ExpenseEvent | VoidEvent | EditEvent>(
     `/groups/${encodeURIComponent(groupId)}/events`,
     { method: 'POST', body: JSON.stringify(event) },
   )
@@ -137,4 +140,8 @@ export function makeExpense(input: Omit<NewExpense, 'type'>): NewExpense {
 
 export function makeVoid(input: Omit<NewVoid, 'type'>): NewVoid {
   return { type: 'void', ...input }
+}
+
+export function makeEdit(input: Omit<NewEdit, 'type'>): NewEdit {
+  return { type: 'edit', ...input }
 }

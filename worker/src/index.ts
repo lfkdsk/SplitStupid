@@ -224,7 +224,7 @@ interface GroupRow {
 interface EventRow {
   id: string
   group_id: string
-  type: 'expense' | 'void'
+  type: 'expense' | 'void' | 'edit'
   payload: string
   author_login: string
   ts: number
@@ -552,13 +552,15 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
   }
 
   const type = body?.type
-  if (type !== 'expense' && type !== 'void') {
-    return json({ error: 'type must be "expense" or "void"' }, 400)
+  if (type !== 'expense' && type !== 'void' && type !== 'edit') {
+    return json({ error: 'type must be "expense", "void", or "edit"' }, 400)
   }
 
   // Event timestamp. Defaults to "now"; an expense may carry a caller-
   // supplied `ts` (unix ms) to backdate it — the add-expense date picker.
-  // Voids are always stamped now (no reason to backdate an audit row).
+  // Voids and edits are always stamped now: their `ts` is the audit instant
+  // (when the correction happened). An edit's *new effective expense date*
+  // rides in its payload (`date`), not this column.
   let ts = Date.now()
 
   let payload: Record<string, unknown>
@@ -598,7 +600,7 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     }
     payload = { payer, amount, participants, split }
     if (typeof note === 'string' && note.trim()) payload.note = note.trim()
-  } else {
+  } else if (type === 'void') {
     const targetId = body.targetId
     if (typeof targetId !== 'string') return json({ error: 'targetId required' }, 400)
     // Void is gated on (owner OR original event author).
@@ -613,6 +615,37 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     if (typeof body.reason === 'string' && body.reason.trim()) {
       payload.reason = body.reason.trim()
     }
+  } else {
+    // type === 'edit' — amend an existing expense's amount / date in place.
+    // The original expense row stays put; settlement and the receipt fold the
+    // latest edit over it. Edit is the author's alone (matches the rule that
+    // you can only post an expense you paid — you correct your own spend).
+    const targetId = body.targetId
+    const amount = body.amount
+    const date = body.date
+    if (typeof targetId !== 'string') return json({ error: 'targetId required' }, 400)
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
+      return json({ error: 'amount must be a positive integer (minor units)' }, 400)
+    }
+    if (typeof date !== 'number' || !Number.isInteger(date) || date <= 0) {
+      return json({ error: 'date must be a positive unix-ms integer' }, 400)
+    }
+    const target = await env.DB.prepare(
+      `SELECT type, author_login FROM events WHERE id = ? AND group_id = ?`,
+    ).bind(targetId, id).first<{ type: string; author_login: string }>()
+    if (!target) return json({ error: 'targetId not found in this group' }, 404)
+    if (target.type !== 'expense') return json({ error: 'can only edit an expense' }, 400)
+    if (target.author_login !== me) {
+      return json({ error: 'can only edit expenses you authored' }, 403)
+    }
+    // Editing a struck expense makes no sense — it's already out of the
+    // ledger. Reject rather than silently resurrect it.
+    const struck = await env.DB.prepare(
+      `SELECT 1 FROM events WHERE group_id = ? AND type = 'void'
+         AND json_extract(payload,'$.targetId') = ? LIMIT 1`,
+    ).bind(id, targetId).first<{ 1: number }>()
+    if (struck) return json({ error: 'cannot edit a voided expense' }, 409)
+    payload = { targetId, amount, date }
   }
 
   const eventId = randomId(12)

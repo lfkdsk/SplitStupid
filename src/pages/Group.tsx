@@ -5,6 +5,7 @@ import {
   finalizeGroup,
   joinGroup,
   listFriends,
+  makeEdit,
   makeExpense,
   makeVoid,
   postEvent,
@@ -12,9 +13,15 @@ import {
   removeMember,
   reopenGroup,
 } from '../lib/api'
-import { computeBalances, formatAmount, parseAmount, settle } from '../lib/settle'
+import {
+  computeBalances,
+  formatAmount,
+  latestEditByTarget,
+  parseAmount,
+  settle,
+} from '../lib/settle'
 import { avatarUrl } from '../lib/avatar'
-import type { ExpenseEvent, Group } from '../types'
+import type { EditEvent, ExpenseEvent, Group } from '../types'
 import ConfirmModal from '../components/ConfirmModal'
 import ShareImageModal from '../components/ShareImageModal'
 import { renderReceipt } from '../lib/receipt'
@@ -58,10 +65,11 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   // immediately. We stash the whole event so the dialog can show what's
   // about to be struck.
   const [voidTarget, setVoidTarget] = useState<ExpenseEvent | null>(null)
-  // Editing an expense. The ledger is append-only, so an "edit" is really a
-  // void-of-the-original plus a fresh expense carrying the new figures — see
-  // saveEdit. Only the date and amount are editable; payer / participants /
-  // note ride along unchanged.
+  // Editing an expense. An edit is its own append-only event that amends the
+  // original's amount / date in place (see saveEdit) — no void+repost. Only
+  // the date and amount are editable; payer / participants / note ride along
+  // unchanged. `editTarget` holds the original expense (for id / payer /
+  // participants / note); the fields seed from its *effective* figures.
   const [editTarget, setEditTarget] = useState<ExpenseEvent | null>(null)
   const [editAmountStr, setEditAmountStr] = useState('')
   const [editDateStr, setEditDateStr] = useState('')
@@ -109,6 +117,13 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const maxBalance = useMemo(
     () => balances.reduce((m, b) => Math.max(m, Math.abs(b.balance)), 0),
     [balances],
+  )
+  // Latest edit per expense id — lets the activity feed render each expense
+  // with its amended amount / date (and an "edited" marker) and pre-fill the
+  // edit dialog from the current figures rather than the original ones.
+  const edits = useMemo<Map<string, EditEvent>>(
+    () => group ? latestEditByTarget(group.events) : new Map(),
+    [group],
   )
 
   if (!group) {
@@ -289,14 +304,15 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     }
   }
 
-  // Seed the edit dialog from an existing expense. Amount is stored in minor
-  // units, so convert back to the human-typed major form; date comes from
-  // the event's ISO timestamp.
-  function openEdit(e: ExpenseEvent) {
+  // Seed the edit dialog from an expense's *effective* figures (amount / date
+  // after any prior edit), so re-editing starts from what's on screen rather
+  // than the original entry. Amount is stored in minor units, so convert back
+  // to the human-typed major form.
+  function openEdit(e: ExpenseEvent, effAmount: number, effDateMs: number) {
     if (!group) return
     setEditTarget(e)
-    setEditAmountStr(amountToInput(e.amount, group.currency))
-    setEditDateStr(toLocalInputValue(new Date(e.ts)))
+    setEditAmountStr(amountToInput(effAmount, group.currency))
+    setEditDateStr(toLocalInputValue(new Date(effDateMs)))
     setError(null)
   }
 
@@ -307,26 +323,18 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       setError('Amount must be a positive number')
       return
     }
-    const ts = editDateStr ? new Date(editDateStr).getTime() : NaN
-    if (!Number.isFinite(ts)) {
+    const date = editDateStr ? new Date(editDateStr).getTime() : NaN
+    if (!Number.isFinite(date)) {
       setError('Pick a valid date')
       return
     }
     setBusy(true)
     setError(null)
     try {
-      // Append-only ledger: an edit = void the original, then re-post it with
-      // the new amount / date. Void first so that a mid-way failure leaves the
-      // expense missing (visible, re-addable) rather than double-counted.
-      await postEvent(group.id, makeVoid({ targetId: editTarget.id }))
-      await postEvent(group.id, makeExpense({
-        payer: editTarget.payer,
-        amount,
-        participants: editTarget.participants,
-        split: editTarget.split,
-        note: editTarget.note,
-        ts,
-      }))
+      // A single append-only edit event amends the original's amount / date —
+      // settlement and the receipt fold it over the target server-side-shaped
+      // data on next refresh.
+      await postEvent(group.id, makeEdit({ targetId: editTarget.id, amount, date }))
       await refresh()
       setEditTarget(null)
     } catch (err: any) {
@@ -685,14 +693,35 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               </div>
             )
           }
+          if (e.type === 'edit') {
+            return (
+              <div key={e.id} className="event">
+                <img src={avatarUrl(e.author, 56)} alt="" className="event-avatar" />
+                <div className="event-body">
+                  <p className="event-title">
+                    <span className="event-edit">EDITED</span> · {e.targetId}
+                  </p>
+                  <p className="event-meta">
+                    {e.author} · {fmtDate(e.ts)} · now {fmtDate(new Date(e.date).toISOString())}
+                  </p>
+                </div>
+                <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
+              </div>
+            )
+          }
           const isVoided = voided.has(e.id)
+          // Effective figures: an edit amends the original's amount / date in
+          // place, so show the latest values (and flag that it was touched).
+          const edit = edits.get(e.id)
+          const effAmount = edit ? edit.amount : e.amount
+          const effDateMs = edit ? edit.date : new Date(e.ts).getTime()
           // Owner can void anything; otherwise members can only void
           // events they themselves authored. Server enforces; this is
           // just the affordance. A finalized group freezes voiding too.
           const canVoid = (isOwner || e.author === me) && !isVoided && !isFinalized
-          // Editing re-posts the expense as the payer, and the server only
-          // lets you post expenses you paid — so the edit affordance is the
-          // author's alone (owner can void someone else's, but not edit it).
+          // An edit is its own event the server only accepts from the original
+          // expense's author — so the edit affordance is the author's alone
+          // (owner can void someone else's, but not edit it).
           const canEdit = e.author === me && !isVoided && !isFinalized
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
@@ -700,18 +729,19 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               <div className="event-body">
                 <p className="event-title">
                   <strong>{e.payer}</strong> paid{e.note ? <> for <strong>{e.note}</strong></> : null}
+                  {edit && !isVoided ? <span className="event-edited-tag">edited</span> : null}
                 </p>
                 <p className="event-meta">
-                  split among {e.participants.join(', ')} · {fmtDate(e.ts)}
+                  split among {e.participants.join(', ')} · {fmtDate(new Date(effDateMs).toISOString())}
                 </p>
               </div>
-              <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
+              <span className="event-amount">{formatAmount(effAmount, group.currency)}</span>
               {(canEdit || canVoid) && (
                 <div className="event-actions">
                   {canEdit && (
                     <button
                       className="edit-ghost"
-                      onClick={() => openEdit(e)}
+                      onClick={() => openEdit(e, effAmount, effDateMs)}
                       disabled={busy}
                     >
                       edit
@@ -839,7 +869,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               <p className="muted" style={{ marginTop: 0 }}>
                 Adjust the amount or date. Participants
                 {editTarget.note ? <> and the note (<strong>{editTarget.note}</strong>)</> : null}
-                {' '}stay the same — the old entry is voided and replaced.
+                {' '}stay the same — the entry is amended in place, with an
+                edit logged in the activity feed.
               </p>
               <div style={{ marginBottom: 14 }}>
                 <span className="field-label">Amount ({group.currency})</span>
