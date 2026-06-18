@@ -31,9 +31,14 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: worker/package-lock.json
-      # wrangler-action installs deps from worker/package-lock.json and runs
-      # `wrangler deploy` in that directory. Database id / bindings come from
-      # worker/wrangler.toml; only the credentials are injected here.
+      # Install from the lockfile so wrangler-action's `npx --no-install
+      # wrangler` picks up the project-pinned wrangler 4.x instead of
+      # falling back to a stale default — our compatibility_date is newer
+      # than that default would support.
+      - run: npm ci
+        working-directory: worker
+      # wrangler-action runs `wrangler deploy` in worker/. Database id /
+      # bindings come from worker/wrangler.toml; only credentials inject here.
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
