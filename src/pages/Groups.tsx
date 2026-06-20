@@ -1,62 +1,29 @@
-import { useEffect, useState } from 'react'
-import { createGroup, deleteGroup, listGroups, removeMember } from '../lib/api'
-import type { GroupSummary } from '../types'
-import { avatarUrl } from '../lib/avatar'
+import { useState } from 'react'
+import { avatarUrl } from '@splitstupid/core'
+import { useGroups } from '@splitstupid/hooks'
+import type { GroupSummary } from '@splitstupid/core'
 import ConfirmModal from '../components/ConfirmModal'
 
 export default function Groups({ me }: { me: string }) {
-  const [groups, setGroups] = useState<GroupSummary[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [removing, setRemoving] = useState<string | null>(null)
+  const { groups, error, setError, creating, create, removingId: removing, removeOrLeave } = useGroups(me)
   const [pendingRemove, setPendingRemove] = useState<GroupSummary | null>(null)
   const [name, setName] = useState('')
   const [currency, setCurrency] = useState('USD')
 
-  async function refresh() {
-    setError(null)
-    try { setGroups(await listGroups()) }
-    catch (e: any) { setError(e?.message || 'Failed to list groups'); setGroups([]) }
-  }
-  useEffect(() => { refresh() }, [])
-
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    setCreating(true)
-    setError(null)
-    try {
-      const g = await createGroup({ name: name.trim(), currency })
-      window.location.hash = `#/g/${g.id}`
-    } catch (err: any) {
-      setError(err?.message || 'Failed to create group')
-    } finally {
-      setCreating(false)
-    }
+    const id = await create({ name, currency })
+    if (id) window.location.hash = `#/g/${id}`
   }
 
-  // Owner → hard delete (typed-name confirmation, since the ledger is
-  // gone for everyone). Non-owner → leave (plain confirmation, since
-  // they can rejoin via share link).
+  // Owner → hard delete (typed-name confirmation). Non-owner → leave.
   function requestRemove(g: GroupSummary) {
     setPendingRemove(g)
   }
 
   async function confirmRemove() {
-    const g = pendingRemove
-    if (!g) return
-    const isOwned = g.role === 'owner'
-    setRemoving(g.id)
-    setError(null)
-    try {
-      if (isOwned) await deleteGroup(g.id)
-      else await removeMember(g.id, me)
-      setGroups(prev => prev ? prev.filter(x => x.id !== g.id) : prev)
-      setPendingRemove(null)
-    } catch (err: any) {
-      setError(err?.message || (isOwned ? 'Failed to delete' : 'Failed to leave'))
-    } finally {
-      setRemoving(null)
-    }
+    if (!pendingRemove) return
+    if (await removeOrLeave(pendingRemove)) setPendingRemove(null)
   }
 
   return (

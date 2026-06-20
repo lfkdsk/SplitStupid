@@ -3,12 +3,21 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "core",
+    "hooks",
+    "mobile"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "npm test --workspace @splitstupid/core",
+    "typecheck": "tsc -b && npm run typecheck --workspace @splitstupid/core"
   },
   "dependencies": {
+    "@splitstupid/core": "*",
+    "@splitstupid/hooks": "*",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

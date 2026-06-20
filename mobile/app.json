@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "SplitStupid",
+    "slug": "splitstupid",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "splitstupid",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#faf6ef"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.lfkdsk.splitstupid",
+      "associatedDomains": [
+        "applinks:splitstupid.lfkdsk.org"
+      ]
+    },
+    "android": {
+      "package": "org.lfkdsk.splitstupid",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "splitstupid.lfkdsk.org",
+              "pathPrefix": "/g"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}

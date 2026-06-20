@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react'
-import { readInvite } from '../lib/api'
+import { avatarUrl } from '@splitstupid/core'
+import { useInvite } from '@splitstupid/hooks'
 import { isOAuthConfigured, startOAuthFlow } from '../lib/oauth'
-import { avatarUrl } from '../lib/avatar'
-import type { InviteSummary } from '../types'
 import Setup from './Setup'
 
 // Share-link landing for unauthenticated visitors. Replaces the generic
@@ -20,25 +18,7 @@ export default function Invite({
   authError: string | null
   onDismissError: () => void
 }) {
-  const [invite, setInvite] = useState<InviteSummary | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    readInvite(groupId).then(i => {
-      if (cancelled) return
-      setInvite(i)
-      setLoading(false)
-    }).catch(e => {
-      if (cancelled) return
-      setError(e?.message || 'Failed to load invite')
-      setLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [groupId])
+  const { invite, loading, error } = useInvite(groupId)
 
   // Bad/expired link → fall back to the regular landing so the visitor
   // can still see what the product is about and sign in. We don't surface

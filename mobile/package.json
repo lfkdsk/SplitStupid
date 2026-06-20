@@ -1,0 +1,43 @@
+{
+  "name": "@splitstupid/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild",
+    "typecheck": "tsc -p tsconfig.json",
+    "build:webview": "esbuild webview/receipt-entry.ts --bundle --format=iife --platform=browser --target=es2019 --outfile=assets/receipt-bundle.js && node scripts/inline-webview.mjs"
+  },
+  "dependencies": {
+    "@react-native-community/datetimepicker": "9.1.0",
+    "@react-navigation/native": "^7.3.3",
+    "@react-navigation/native-stack": "^7.17.5",
+    "@splitstupid/core": "*",
+    "@splitstupid/hooks": "*",
+    "expo": "^56.0.0",
+    "expo-auth-session": "~56.0.14",
+    "expo-constants": "~56.0.18",
+    "expo-crypto": "~56.0.4",
+    "expo-file-system": "~56.0.8",
+    "expo-linking": "~56.0.14",
+    "expo-secure-store": "~56.0.4",
+    "expo-sharing": "~56.0.18",
+    "expo-status-bar": "~56.0.4",
+    "expo-web-browser": "~56.0.5",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-qrcode-svg": "^6.3.21",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "^4.25.2",
+    "react-native-svg": "15.15.4",
+    "react-native-webview": "^13.16.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "~6.0.2"
+  }
+}

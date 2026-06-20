@@ -7,15 +7,20 @@ the classic min-cashflow greedy client-side.
 
 ## Repo layout
 
-This is a monorepo. Frontend lives at the root, backend Worker in
-`worker/`:
+This is an npm-workspaces monorepo. The web frontend lives at the root,
+the shared logic in `core/`, the iOS app in `mobile/`, and the backend
+Worker in `worker/`:
 
 ```
 SplitStupid/
 ├── src/                  ← React + Vite frontend (splitstupid.lfkdsk.org)
 ├── public/CNAME
 ├── .github/workflows/    ← GH Pages deploy on push to master
-├── package.json          ← frontend deps
+├── package.json          ← frontend deps + workspaces: [core, mobile]
+├── core/                 ← @splitstupid/core — isomorphic logic (no DOM/React)
+│   └── src/              ← types · settle · api · me · avatar (+ settle.test.ts)
+├── mobile/               ← React Native (Expo) app — imports @splitstupid/core
+│   └── README.md         ← run / build / ship steps, auth-broker change
 └── worker/               ← Cloudflare Worker + D1 (api.splitstupid.lfkdsk.org)
     ├── src/index.ts
     ├── migrations/0001_init.sql
@@ -23,10 +28,21 @@ SplitStupid/
     └── README.md         ← deploy steps, route table, schema notes
 ```
 
-The two halves are versioned together — a commit that adds an API route
-also adds the UI that uses it. CF Workers Builds (configured to a
-`worker/` root directory) and GH Pages run in parallel on each push to
-`master`.
+The pieces are versioned together — a commit that adds an API route also
+adds the UI that uses it. CF Workers Builds (configured to a `worker/`
+root directory) and GH Pages run in parallel on each push to `master`.
+
+### Isomorphic core (web ⇄ iOS)
+
+`core/` is pure TypeScript with no DOM, React, or platform globals beyond
+`fetch`, so the web app and the React Native app import the **exact same**
+data shapes, settlement math, and API client and stay in lock-step — change
+the min-cashflow logic once and both pick it up. The API base URL is the
+only platform difference, injected via `configureApi({ baseUrl })` (web
+reads `import.meta.env`, mobile reads its Expo config). The share-image
+canvas renderers (`src/lib/receipt.ts`, `src/lib/postcard.ts`) stay
+web/DOM code but are reused on iOS by bundling them into a WebView — see
+[`mobile/README.md`](mobile/README.md).
 
 ## How it works
 
@@ -83,9 +99,13 @@ trustworthy.
 Frontend:
 
 ```sh
-npm install
+npm install                 # installs every workspace (web + core + mobile)
 npm run dev                 # http://localhost:5180
+npm test                    # @splitstupid/core unit tests (settlement math)
 ```
+
+iOS app: see [`mobile/README.md`](mobile/README.md) (`npm run build:webview
+-w @splitstupid/mobile`, then `cd mobile && npx expo run:ios`).
 
 Backend (in another terminal, optional — `.env.production` already
 points at the deployed Worker, so this is only needed if you're

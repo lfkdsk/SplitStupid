@@ -1,6 +1,6 @@
-// Tiny GitHub /user lookup. Replaces what we previously did via Octokit;
-// this is the only direct GitHub API call the frontend still makes.
-// Everything else (groups, events) goes to our own Worker.
+// Tiny GitHub /user lookup — the only direct GitHub API call any client
+// still makes. Everything else (groups, events) goes to our own Worker.
+// Pure fetch, so it runs unchanged on web and React Native.
 
 export interface GitHubUser {
   login: string

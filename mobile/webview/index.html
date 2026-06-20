@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <!-- The same three faces the receptor/postcard renderers expect. They
+         await document.fonts.ready before measuring, so loading them here
+         keeps the native output pixel-identical to the web. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- `npm run build:webview` replaces this token with the IIFE bundle of
+         receipt-entry.ts. The result is inlined into src/share/receiptHtml.ts. -->
+    <script>
+      /*__BUNDLE__*/
+    </script>
+  </body>
+</html>

@@ -8,8 +8,8 @@
 // blocks are painted top-down. Two-pass keeps the receipt's torn-edge
 // clipping path tight: we never have to overshoot or guess.
 
-import type { Balance, ExpenseEvent, Group, Transfer } from '../types'
-import { effectiveExpenses, formatAmount } from './settle'
+import type { Balance, ExpenseEvent, Group, Transfer } from '@splitstupid/core'
+import { effectiveExpenses, formatAmount, realCostByMember } from '@splitstupid/core'
 
 const PAPER = '#faf6ef'
 const INK = '#1a1410'
@@ -501,26 +501,6 @@ function balanceRow(b: Balance, currency: string): Block {
       ctx.fillText(`${sign}${formatAmount(b.balance, currency)}`, W - PAD_X, y + 1)
     },
   }
-}
-
-// Sum each member's own share of every expense. Mirrors settle.ts's debit
-// side exactly (floor split with the rounding remainder dumped on the first
-// participant) so the per-member costs total the same integer as TOTAL.
-function realCostByMember(expenses: ExpenseEvent[]): Map<string, number> {
-  const cost = new Map<string, number>()
-  const add = (m: string, v: number) => cost.set(m, (cost.get(m) ?? 0) + v)
-  for (const e of expenses) {
-    if (e.split === 'equal') {
-      const n = e.participants.length
-      if (n === 0) continue
-      const base = Math.floor(e.amount / n)
-      const remainder = e.amount - base * n
-      e.participants.forEach((p, i) => add(p, base + (i === 0 ? remainder : 0)))
-    } else {
-      for (const [m, owed] of Object.entries(e.split)) add(m, owed)
-    }
-  }
-  return cost
 }
 
 function costRow(member: string, cost: number, currency: string): Block {

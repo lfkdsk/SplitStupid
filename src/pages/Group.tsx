@@ -1,130 +1,53 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import {
-  addMember,
-  finalizeGroup,
-  joinGroup,
-  listFriends,
-  makeEdit,
-  makeExpense,
-  makeVoid,
-  postEvent,
-  readGroup,
-  removeMember,
-  reopenGroup,
-} from '../lib/api'
-import {
-  computeBalances,
-  formatAmount,
-  latestEditByTarget,
-  parseAmount,
-  settle,
-} from '../lib/settle'
-import { avatarUrl } from '../lib/avatar'
-import type { EditEvent, ExpenseEvent, Group } from '../types'
+import { avatarUrl, formatAmount } from '@splitstupid/core'
+import type { ExpenseEvent } from '@splitstupid/core'
+import { useGroup } from '@splitstupid/hooks'
 import ConfirmModal from '../components/ConfirmModal'
 import ShareImageModal from '../components/ShareImageModal'
 import { renderReceipt } from '../lib/receipt'
 import { renderPostcard } from '../lib/postcard'
 
 export default function Group({ groupId, me }: { groupId: string; me: string }) {
-  const [group, setGroup] = useState<Group | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [joining, setJoining] = useState(false)
+  const {
+    group, error, busy, setError,
+    balances, transfers, maxBalance,
+    isOwner, isMember, isFinalized, shareUrl, expenseView,
+    friends, availableFriends, loadFriends,
+    join, addExpense: postExpense, voidExpense, saveEdit: saveEditApi,
+    finalize, reopen, addFriend: addFriendApi, removeSelfOrMember,
+  } = useGroup(groupId, me)
+
+  // View-only state: form inputs, which panels/modals are open, and the
+  // per-chip "adding" spinner. The substantive page logic lives in useGroup.
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  // Owner-only "add a past split-mate" picker. Friends are fetched lazily the
-  // first time the panel opens; `addingFriend` holds the login mid-request so
-  // its chip can show a spinner without blocking the others.
   const [friendsOpen, setFriendsOpen] = useState(false)
-  const [friends, setFriends] = useState<string[] | null>(null)
   const [addingFriend, setAddingFriend] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [postcardOpen, setPostcardOpen] = useState(false)
-  // Two-step finalize / reopen confirmation. We track each separately so
-  // the modal copy can adapt without juggling a "mode" enum.
   const [confirmFinalize, setConfirmFinalize] = useState(false)
   const [confirmReopen, setConfirmReopen] = useState(false)
 
-  // Add-expense form state. Payer is always the authenticated user —
-  // server enforces this too, so even a poked request can't claim
-  // someone else paid.
+  // Add-expense form. Payer is always the authenticated user (server enforces).
   const [amountStr, setAmountStr] = useState('')
   const [note, setNote] = useState('')
   const [participants, setParticipants] = useState<string[]>([])
-  // Expense date. Seeded to "now"; the user can pick another date. We only
-  // send a `ts` override to the server once they've actually touched the
-  // field — otherwise the server stamps now itself, preserving full
-  // sub-minute precision for the common "just log it" path.
   const [dateStr, setDateStr] = useState(() => toLocalInputValue(new Date()))
   const [dateEdited, setDateEdited] = useState(false)
 
-  // Voiding an expense is destructive (it drops it out of the settlement),
-  // so route the inline button through a confirmation rather than firing
-  // immediately. We stash the whole event so the dialog can show what's
-  // about to be struck.
+  // Void / edit confirmation targets (the original expense being acted on).
   const [voidTarget, setVoidTarget] = useState<ExpenseEvent | null>(null)
-  // Editing an expense. An edit is its own append-only event that amends the
-  // original's amount / date in place (see saveEdit) — no void+repost. Only
-  // the date and amount are editable; payer / participants / note ride along
-  // unchanged. `editTarget` holds the original expense (for id / payer /
-  // participants / note); the fields seed from its *effective* figures.
   const [editTarget, setEditTarget] = useState<ExpenseEvent | null>(null)
   const [editAmountStr, setEditAmountStr] = useState('')
   const [editDateStr, setEditDateStr] = useState('')
 
-  async function refresh() {
-    setError(null)
-    try {
-      setGroup(await readGroup(groupId))
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load group')
-    }
-  }
-  useEffect(() => { refresh() }, [groupId])
-
-  // Once the roster is known, lazily seed the add-expense form. We avoid
-  // overwriting the user's in-progress edits — if `participants` is
-  // already populated, leave it alone.
+  // Once the roster loads, seed the add-expense participants (don't clobber
+  // an in-progress selection).
   useEffect(() => {
     if (!group) return
     setParticipants(prev => prev.length ? prev : group.members)
   }, [group])
-
-  // Settlement roster includes everyone who shows up in any event,
-  // not just the *current* members list. That way a member who paid
-  // for stuff and then got kicked / left still gets a balance row +
-  // any "owe-them" transfer line — past activity isn't erased by
-  // present membership state.
-  const settlementRoster = useMemo(() => {
-    if (!group) return []
-    const set = new Set<string>(group.members)
-    for (const e of group.events) {
-      if (e.type === 'expense') {
-        set.add(e.payer)
-        for (const p of e.participants) set.add(p)
-      }
-    }
-    return Array.from(set)
-  }, [group])
-
-  const balances = useMemo(
-    () => group ? computeBalances(group.events, settlementRoster) : [],
-    [group, settlementRoster],
-  )
-  const transfers = useMemo(() => settle(balances), [balances])
-  const maxBalance = useMemo(
-    () => balances.reduce((m, b) => Math.max(m, Math.abs(b.balance)), 0),
-    [balances],
-  )
-  // Latest edit per expense id — lets the activity feed render each expense
-  // with its amended amount / date (and an "edited" marker) and pre-fill the
-  // edit dialog from the current figures rather than the original ones.
-  const edits = useMemo<Map<string, EditEvent>>(
-    () => group ? latestEditByTarget(group.events) : new Map(),
-    [group],
-  )
 
   if (!group) {
     return (
@@ -135,33 +58,11 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     )
   }
 
-  const isOwner = group.owner === me
-  const isMember = group.members.includes(me)
-  const isFinalized = group.finalizedAt != null
-  const voided = new Set(
-    group.events.filter(e => e.type === 'void').map(e => (e as any).targetId),
-  )
-  const shareUrl = `${window.location.origin}/#/g/${group.id}`
-  // Friends not already on the roster — the only ones worth offering to add.
-  const availableFriends = (friends ?? []).filter(f => !group.members.includes(f))
+  async function handleJoin() { await join() }
 
-  async function handleJoin() {
-    setJoining(true)
-    setError(null)
-    try {
-      await joinGroup(group!.id)
-      await refresh()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to join group')
-    } finally {
-      setJoining(false)
-    }
-  }
-
-  // Either an owner kicking another member, or a non-owner self-leaving
-  // from the chip's × button. Same endpoint, server enforces who's
-  // allowed to do what. On self-leave we bounce back to the list since
-  // the user no longer has visibility into this group.
+  // Owner kicking a member, or a non-owner self-leaving via the chip's ×.
+  // The confirm + (on self-leave) navigation are web concerns; the hook owns
+  // the call and tells us which case happened so we can bounce to the list.
   async function handleRemoveMember(login: string) {
     if (!group) return
     const isSelf = login === me
@@ -171,177 +72,58 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         : `Remove ${login} from "${group.name}"? Their past expenses stay in the ledger; they just can't record new ones.`,
     )
     if (!ok) return
-    setBusy(true)
-    setError(null)
-    try {
-      await removeMember(group.id, login)
-      if (isSelf) {
-        window.location.hash = '#/'
-      } else {
-        await refresh()
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to remove member')
-    } finally {
-      setBusy(false)
-    }
+    const result = await removeSelfOrMember(login)
+    if (result === 'left') window.location.hash = '#/'
   }
 
   // Toggle the friends picker; fetch the candidate list on first open.
   async function toggleFriends() {
     const next = !friendsOpen
     setFriendsOpen(next)
-    if (next && friends == null) {
-      try {
-        setFriends(await listFriends())
-      } catch (err: any) {
-        setFriends([])
-        setError(err?.message || 'Failed to load friends')
-      }
-    }
+    if (next && friends == null) await loadFriends()
   }
 
   async function addFriend(login: string) {
-    if (!group) return
     setAddingFriend(login)
-    setError(null)
-    try {
-      await addMember(group.id, login)
-      await refresh()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to add member')
-    } finally {
-      setAddingFriend(null)
-    }
+    await addFriendApi(login)
+    setAddingFriend(null)
   }
 
-  async function handleFinalize() {
-    if (!group) return
-    setBusy(true)
-    setError(null)
-    try {
-      await finalizeGroup(group.id)
-      setConfirmFinalize(false)
-      await refresh()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to finalize')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleReopen() {
-    if (!group) return
-    setBusy(true)
-    setError(null)
-    try {
-      await reopenGroup(group.id)
-      setConfirmReopen(false)
-      await refresh()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to reopen')
-    } finally {
-      setBusy(false)
-    }
-  }
+  async function handleFinalize() { await finalize(); setConfirmFinalize(false) }
+  async function handleReopen() { await reopen(); setConfirmReopen(false) }
 
   async function addExpense(e: React.FormEvent) {
     e.preventDefault()
-    if (!group) return
-    const amount = parseAmount(amountStr, group.currency)
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Amount must be a positive number')
-      return
-    }
-    if (participants.length === 0) {
-      setError('Pick at least one participant')
-      return
-    }
-    let ts: number | undefined
-    if (dateEdited) {
-      const parsed = dateStr ? new Date(dateStr).getTime() : NaN
-      if (!Number.isFinite(parsed)) {
-        setError('Pick a valid date')
-        return
-      }
-      ts = parsed
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      await postEvent(group.id, makeExpense({
-        payer: me,
-        amount,
-        participants,
-        split: 'equal',
-        note: note.trim() || undefined,
-        ts,
-      }))
-      await refresh()
+    const dateMs = dateEdited ? (dateStr ? new Date(dateStr).getTime() : NaN) : undefined
+    const ok = await postExpense({ amountStr, note, participants, dateMs })
+    if (ok) {
       setAmountStr('')
       setNote('')
       setDateStr(toLocalInputValue(new Date()))
       setDateEdited(false)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save')
-    } finally {
-      setBusy(false)
     }
   }
 
   async function voidEvent(targetId: string) {
-    if (!group) return
-    setBusy(true)
-    setError(null)
-    try {
-      await postEvent(group.id, makeVoid({ targetId }))
-      await refresh()
-      setVoidTarget(null)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to void')
-    } finally {
-      setBusy(false)
-    }
+    await voidExpense(targetId)
+    setVoidTarget(null)
   }
 
-  // Seed the edit dialog from an expense's *effective* figures (amount / date
-  // after any prior edit), so re-editing starts from what's on screen rather
-  // than the original entry. Amount is stored in minor units, so convert back
-  // to the human-typed major form.
+  // Seed the edit dialog from an expense's *effective* figures (post any prior
+  // edit), so re-editing starts from what's on screen. Amount is minor units,
+  // so convert back to the human-typed major form.
   function openEdit(e: ExpenseEvent, effAmount: number, effDateMs: number) {
-    if (!group) return
     setEditTarget(e)
-    setEditAmountStr(amountToInput(effAmount, group.currency))
+    setEditAmountStr(amountToInput(effAmount, group!.currency))
     setEditDateStr(toLocalInputValue(new Date(effDateMs)))
     setError(null)
   }
 
   async function saveEdit() {
-    if (!group || !editTarget) return
-    const amount = parseAmount(editAmountStr, group.currency)
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Amount must be a positive number')
-      return
-    }
-    const date = editDateStr ? new Date(editDateStr).getTime() : NaN
-    if (!Number.isFinite(date)) {
-      setError('Pick a valid date')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      // A single append-only edit event amends the original's amount / date —
-      // settlement and the receipt fold it over the target server-side-shaped
-      // data on next refresh.
-      await postEvent(group.id, makeEdit({ targetId: editTarget.id, amount, date }))
-      await refresh()
-      setEditTarget(null)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save edit')
-    } finally {
-      setBusy(false)
-    }
+    if (!editTarget) return
+    const dateMs = editDateStr ? new Date(editDateStr).getTime() : NaN
+    const ok = await saveEditApi(editTarget.id, { amountStr: editAmountStr, dateMs })
+    if (ok) setEditTarget(null)
   }
 
   function toggleParticipant(m: string) {
@@ -551,8 +333,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
             You're viewing as a guest. Joining adds you to the roster as <strong>{me}</strong>,
             so you can record your own expenses and be included when the bill is split.
           </p>
-          <button onClick={handleJoin} disabled={joining}>
-            {joining ? 'Joining…' : `Join as ${me}`}
+          <button onClick={handleJoin} disabled={busy}>
+            {busy ? 'Joining…' : `Join as ${me}`}
           </button>
         </div>
       )}
@@ -709,27 +491,16 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               </div>
             )
           }
-          const isVoided = voided.has(e.id)
-          // Effective figures: an edit amends the original's amount / date in
-          // place, so show the latest values (and flag that it was touched).
-          const edit = edits.get(e.id)
-          const effAmount = edit ? edit.amount : e.amount
-          const effDateMs = edit ? edit.date : new Date(e.ts).getTime()
-          // Owner can void anything; otherwise members can only void
-          // events they themselves authored. Server enforces; this is
-          // just the affordance. A finalized group freezes voiding too.
-          const canVoid = (isOwner || e.author === me) && !isVoided && !isFinalized
-          // An edit is its own event the server only accepts from the original
-          // expense's author — so the edit affordance is the author's alone
-          // (owner can void someone else's, but not edit it).
-          const canEdit = e.author === me && !isVoided && !isFinalized
+          // Effective figures (edit-folded) + the void/edit permission flags
+          // all come from the shared hook — same logic the RN screen uses.
+          const { effAmount, effDateMs, isVoided, edited, canVoid, canEdit } = expenseView(e)
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
               <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
               <div className="event-body">
                 <p className="event-title">
                   <strong>{e.payer}</strong> paid{e.note ? <> for <strong>{e.note}</strong></> : null}
-                  {edit && !isVoided ? <span className="event-edited-tag">edited</span> : null}
+                  {edited && !isVoided ? <span className="event-edited-tag">edited</span> : null}
                 </p>
                 <p className="event-meta">
                   split among {e.participants.join(', ')} · {fmtDate(new Date(effDateMs).toISOString())}
