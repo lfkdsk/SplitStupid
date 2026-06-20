@@ -2,7 +2,7 @@
 // Stateless, no I/O, easy to unit test (and to re-run client-side every
 // render — the input set is small).
 
-import type { Balance, EditEvent, Event, ExpenseEvent, Member, Transfer } from '../types'
+import type { Balance, EditEvent, Event, ExpenseEvent, Member, Transfer } from './types'
 
 // Walk the event log and return per-member running balance. Members
 // missing from the events list still appear (with zero) so the UI can
@@ -118,6 +118,29 @@ export function settle(balances: Balance[]): Transfer[] {
     if (creditor.balance === 0) j--
   }
   return transfers
+}
+
+// Sum each member's own share of every (non-voided, edit-folded) expense:
+// what each person actually bears once all the fronting and repayment has
+// settled. Mirrors applyExpense's debit side exactly (floor split with the
+// rounding remainder dumped on the first participant) so the per-member
+// costs total the same integer as the grand total. Consumed by the receipt's
+// "REAL COST" section on both web and mobile.
+export function realCostByMember(expenses: ExpenseEvent[]): Map<Member, number> {
+  const cost = new Map<Member, number>()
+  const add = (m: Member, v: number) => cost.set(m, (cost.get(m) ?? 0) + v)
+  for (const e of expenses) {
+    if (e.split === 'equal') {
+      const n = e.participants.length
+      if (n === 0) continue
+      const base = Math.floor(e.amount / n)
+      const remainder = e.amount - base * n
+      e.participants.forEach((p, i) => add(p, base + (i === 0 ? remainder : 0)))
+    } else {
+      for (const [m, owed] of Object.entries(e.split)) add(m, owed)
+    }
+  }
+  return cost
 }
 
 // Convenience for the UI: amounts are stored as minor units so settlement

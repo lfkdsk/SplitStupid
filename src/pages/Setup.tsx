@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react'
 import { isOAuthConfigured, startOAuthFlow } from '../lib/oauth'
 import { renderReceipt } from '../lib/receipt'
 import { renderPostcard } from '../lib/postcard'
-import { computeBalances, settle, formatAmount } from '../lib/settle'
-import type { Balance, Group, Transfer } from '../types'
+import { computeBalances, settle, formatAmount } from '@splitstupid/core'
+import type { Balance, Group, Transfer } from '@splitstupid/core'
 
 // A coherent fake trip used for both the in-page sample card and the
 // receipt/postcard canvas previews — five expenses, four splitters,

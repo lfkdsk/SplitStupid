@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchMe } from './lib/me'
-import { setApiToken } from './lib/api'
+import { fetchMe, setApiToken } from '@splitstupid/core'
 import { clearToken, consumeOAuthCallback, loadToken, saveToken } from './lib/oauth'
 import Setup from './pages/Setup'
 import Invite from './pages/Invite'

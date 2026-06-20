@@ -1,0 +1,26 @@
+{
+  "name": "@splitstupid/hooks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Isomorphic page logic — React hooks shared by the web app (root) and the RN app (mobile/). Wraps @splitstupid/core's data + settlement with each page's stateful behaviour (fetch, derive, actions, permission predicates) so both clients run the SAME logic and only differ in rendering. No DOM, no react-dom, no react-native — just React itself, which is renderer-agnostic.",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@splitstupid/core": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "~6.0.2"
+  }
+}

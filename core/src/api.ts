@@ -1,33 +1,46 @@
-// Single source of data for the frontend. Replaces the previous
-// gist-based stack (gist.ts / comments.ts / joined.ts / github.ts).
-// Everything funnels through one Worker at VITE_API_URL.
+// Single source of data for every client. Everything funnels through one
+// Worker; the base URL is injected once at startup via configureApi() so
+// this module stays platform-agnostic (the web app reads it from
+// import.meta.env, the RN app from its Expo config — core doesn't care).
 //
 // Auth: stash the GH OAuth token via setApiToken(); we forward it as
 // `Authorization: Bearer <token>` on every request. The Worker resolves
-// it to a GH login server-side; the frontend never has to think about
+// it to a GH login server-side; the client never has to think about
 // scopes, gist permissions, or who can read what.
 
-import type { EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from '../types'
+import type { EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from './types'
 
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
-
+let _baseUrl: string | undefined
 let _token: string | null = null
+
+/** Point the client at a Worker. Call once before any request. Idempotent —
+ *  safe to call again to repoint (e.g. in tests, or env switches). */
+export function configureApi(opts: { baseUrl?: string | null }): void {
+  _baseUrl = opts.baseUrl?.replace(/\/$/, '') || undefined
+}
 
 export function setApiToken(token: string | null): void {
   _token = token
 }
 
 export function isApiConfigured(): boolean {
-  return !!API_URL
+  return !!_baseUrl
+}
+
+function requireBaseUrl(): string {
+  if (!_baseUrl) {
+    throw new Error('API base URL not configured — call configureApi({ baseUrl }) at startup')
+  }
+  return _baseUrl
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_URL) throw new Error('VITE_API_URL is not configured')
+  const base = requireBaseUrl()
   const headers = new Headers(init?.headers)
   if (_token) headers.set('authorization', `Bearer ${_token}`)
   if (init?.body) headers.set('content-type', 'application/json')
 
-  const res = await fetch(API_URL + path, { ...init, headers })
+  const res = await fetch(base + path, { ...init, headers })
   const text = await res.text()
   if (!res.ok) {
     // Worker returns { error: "..." } JSON on failure; fall back to raw
@@ -50,8 +63,8 @@ export const readGroup = (id: string): Promise<Group> =>
 
 // Public — intentionally bypasses `call` so it works with no token at all.
 export async function readInvite(id: string): Promise<InviteSummary> {
-  if (!API_URL) throw new Error('VITE_API_URL is not configured')
-  const res = await fetch(`${API_URL}/groups/${encodeURIComponent(id)}/invite`)
+  const base = requireBaseUrl()
+  const res = await fetch(`${base}/groups/${encodeURIComponent(id)}/invite`)
   const text = await res.text()
   if (!res.ok) {
     let msg = text

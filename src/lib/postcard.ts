@@ -12,8 +12,8 @@
 //   • Bottom-R   — GRAND TOTAL big serif + per-splitter mono
 //   • Bottom-L   — italic tagline + tilted olive FINALIZED stamp
 
-import type { Group } from '../types'
-import { formatAmount } from './settle'
+import type { Group } from '@splitstupid/core'
+import { formatAmount } from '@splitstupid/core'
 
 const PAPER = '#faf6ef'
 const INK = '#1a1410'
