@@ -12,10 +12,10 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const {
     group, error, busy, setError,
     balances, transfers, maxBalance,
-    isOwner, isMember, isFinalized, shareUrl, expenseView,
+    isOwner, isMember, isFinalized, isEven, lastSettledAt, shareUrl, expenseView,
     friends, availableFriends, loadFriends,
     join, addExpense: postExpense, voidExpense, saveEdit: saveEditApi,
-    finalize, reopen, addFriend: addFriendApi, removeSelfOrMember,
+    settleUp, finalize, reopen, addFriend: addFriendApi, removeSelfOrMember,
   } = useGroup(groupId, me)
 
   // View-only state: form inputs, which panels/modals are open, and the
@@ -28,6 +28,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [postcardOpen, setPostcardOpen] = useState(false)
   const [confirmFinalize, setConfirmFinalize] = useState(false)
   const [confirmReopen, setConfirmReopen] = useState(false)
+  const [confirmSettle, setConfirmSettle] = useState(false)
 
   // Add-expense form. Payer is always the authenticated user (server enforces).
   const [amountStr, setAmountStr] = useState('')
@@ -92,6 +93,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
 
   async function handleFinalize() { await finalize(); setConfirmFinalize(false) }
   async function handleReopen() { await reopen(); setConfirmReopen(false) }
+  async function handleSettle() { await settleUp(); setConfirmSettle(false) }
 
   async function addExpense(e: React.FormEvent) {
     e.preventDefault()
@@ -401,9 +403,16 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       <div className="card">
         <div className="section-head">
           <h3 className="section-title">Settlement</h3>
+          {lastSettledAt && (
+            <span className="section-count" title={`Last settled ${fmtDate(new Date(lastSettledAt).toISOString())}`}>
+              since {new Date(lastSettledAt).toLocaleDateString()}
+            </span>
+          )}
         </div>
-        {balances.every(b => b.balance === 0) ? (
-          <p className="empty">All settled up.</p>
+        {isEven ? (
+          <p className="empty">
+            All settled up.{lastSettledAt ? ` Cleared ${new Date(lastSettledAt).toLocaleDateString()}.` : ''}
+          </p>
         ) : (
           <>
             <div className="balance-list">
@@ -453,6 +462,17 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                 ))}
               </>
             )}
+            {isMember && !isFinalized && (
+              <button
+                type="button"
+                className="settle-btn"
+                onClick={() => setConfirmSettle(true)}
+                disabled={busy}
+                title="Mark everyone settled up to here and reset the balances"
+              >
+                <ChecksIcon /> Settle up — mark everyone paid
+              </button>
+            )}
           </>
         )}
       </div>
@@ -464,6 +484,17 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         </div>
         {group.events.length === 0 && <p className="empty">No events yet.</p>}
         {[...group.events].reverse().map(e => {
+          if (e.type === 'settle') {
+            return (
+              <div key={e.id} className="settle-divider" role="separator">
+                <span className="settle-divider-rule" />
+                <span className="settle-divider-label">
+                  <ChecksIcon /> Settled up · {fmtDate(e.ts)}{e.note ? ` · ${e.note}` : ''}
+                </span>
+                <span className="settle-divider-rule" />
+              </div>
+            )
+          }
           if (e.type === 'void') {
             return (
               <div key={e.id} className="event">
@@ -495,14 +526,15 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           }
           // Effective figures (edit-folded) + the void/edit permission flags
           // all come from the shared hook — same logic the RN screen uses.
-          const { effAmount, effDateMs, effNote, isVoided, edited, canVoid, canEdit } = expenseView(e)
+          const { effAmount, effDateMs, effNote, isVoided, edited, isSettled, canVoid, canEdit } = expenseView(e)
           return (
-            <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
+            <div key={e.id} className={`event ${isVoided ? 'voided' : ''} ${isSettled ? 'settled' : ''}`}>
               <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
               <div className="event-body">
                 <p className="event-title">
                   <strong>{e.payer}</strong> paid{effNote ? <> for <strong>{effNote}</strong></> : null}
                   {edited && !isVoided ? <span className="event-edited-tag">edited</span> : null}
+                  {isSettled && !isVoided ? <span className="event-settled-tag">settled</span> : null}
                 </p>
                 <p className="event-meta">
                   split among {e.participants.join(', ')} · {fmtDate(new Date(effDateMs).toISOString())}
@@ -558,6 +590,30 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         busy={busy}
         onCancel={() => { if (!busy) setConfirmFinalize(false) }}
         onConfirm={handleFinalize}
+      />
+
+      <ConfirmModal
+        open={confirmSettle}
+        title="Settle up"
+        body={
+          <>
+            <p>
+              Record a checkpoint for <strong>{group.name}</strong> confirming everyone's
+              squared up the suggested transfers. The current balances reset to zero and a
+              <em> settled</em> line is drawn across the ledger.
+            </p>
+            <p className="muted" style={{ marginBottom: 0 }}>
+              The group stays open — keep adding expenses for the next round. Entries before
+              the line freeze as a paid-off record. Anyone in the group can do this.
+            </p>
+          </>
+        }
+        confirmLabel="Settle up"
+        cancelLabel="Not yet"
+        tone="neutral"
+        busy={busy}
+        onCancel={() => { if (!busy) setConfirmSettle(false) }}
+        onConfirm={handleSettle}
       />
 
       <ShareImageModal
@@ -738,6 +794,15 @@ function UnlockIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M3.5 6.5h7a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75v-4A.75.75 0 0 1 3.5 6.5Z M4.75 6.5V4.25a2.25 2.25 0 0 1 4.5 0"
+        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function ChecksIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M1.5 7.5l2.25 2.25L8 5M6.5 9.25L7.25 10l4.25-4.5"
         stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )

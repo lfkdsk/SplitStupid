@@ -674,8 +674,8 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
   }
 
   const type = body?.type
-  if (type !== 'expense' && type !== 'void' && type !== 'edit') {
-    return json({ error: 'type must be "expense", "void", or "edit"' }, 400)
+  if (type !== 'expense' && type !== 'void' && type !== 'edit' && type !== 'settle') {
+    return json({ error: 'type must be "expense", "void", "edit", or "settle"' }, 400)
   }
 
   // Event timestamp. Defaults to "now"; an expense may carry a caller-
@@ -684,6 +684,14 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
   // (when the correction happened). An edit's *new effective expense date*
   // rides in its payload (`date`), not this column.
   let ts = Date.now()
+
+  // The most recent settle checkpoint (if any) freezes everything up to it:
+  // you can't backdate an expense to before it, nor void/edit anything it
+  // already cleared. Null when the group has never been settled.
+  const settleRow = await env.DB.prepare(
+    `SELECT MAX(ts) AS ts FROM events WHERE group_id = ? AND type = 'settle'`,
+  ).bind(id).first<{ ts: number | null }>()
+  const latestSettleTs = settleRow?.ts ?? null
 
   let payload: Record<string, unknown>
   if (type === 'expense') {
@@ -720,6 +728,12 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
       }
       ts = body.ts
     }
+    // Can't slip an expense into an already-settled period. (A non-backdated
+    // expense is stamped "now", always after the last settle, so this only
+    // ever bites a deliberate backdate.)
+    if (latestSettleTs != null && ts <= latestSettleTs) {
+      return json({ error: 'cannot backdate an expense to before the last settle' }, 409)
+    }
     payload = { payer, amount, participants, split }
     if (typeof note === 'string' && note.trim()) payload.note = note.trim()
   } else if (type === 'void') {
@@ -727,9 +741,12 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     if (typeof targetId !== 'string') return json({ error: 'targetId required' }, 400)
     // Void is gated on (owner OR original event author).
     const target = await env.DB.prepare(
-      `SELECT author_login FROM events WHERE id = ? AND group_id = ?`,
-    ).bind(targetId, id).first<{ author_login: string }>()
+      `SELECT author_login, ts FROM events WHERE id = ? AND group_id = ?`,
+    ).bind(targetId, id).first<{ author_login: string; ts: number }>()
     if (!target) return json({ error: 'targetId not found in this group' }, 404)
+    if (latestSettleTs != null && target.ts <= latestSettleTs) {
+      return json({ error: 'that expense was settled; it can no longer be voided' }, 409)
+    }
     if (group.owner_login !== me && target.author_login !== me) {
       return json({ error: 'can only void events you authored (or be the group owner)' }, 403)
     }
@@ -737,7 +754,7 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     if (typeof body.reason === 'string' && body.reason.trim()) {
       payload.reason = body.reason.trim()
     }
-  } else {
+  } else if (type === 'edit') {
     // type === 'edit' — amend an existing expense's amount / date (and
     // optionally note) in place. The original expense row stays put; settlement
     // and the receipt fold the latest edit over it. Edit is the author's alone
@@ -760,10 +777,13 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
       return json({ error: 'note must be a string' }, 400)
     }
     const target = await env.DB.prepare(
-      `SELECT type, author_login FROM events WHERE id = ? AND group_id = ?`,
-    ).bind(targetId, id).first<{ type: string; author_login: string }>()
+      `SELECT type, author_login, ts FROM events WHERE id = ? AND group_id = ?`,
+    ).bind(targetId, id).first<{ type: string; author_login: string; ts: number }>()
     if (!target) return json({ error: 'targetId not found in this group' }, 404)
     if (target.type !== 'expense') return json({ error: 'can only edit an expense' }, 400)
+    if (latestSettleTs != null && target.ts <= latestSettleTs) {
+      return json({ error: 'that expense was settled; it can no longer be edited' }, 409)
+    }
     if (target.author_login !== me) {
       return json({ error: 'can only edit expenses you authored' }, 403)
     }
@@ -776,6 +796,21 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     if (struck) return json({ error: 'cannot edit a voided expense' }, 409)
     payload = { targetId, amount, date }
     if (typeof note === 'string') payload.note = note.trim()
+  } else {
+    // type === 'settle' — a clear-the-slate checkpoint. Any member may stamp
+    // one (the membership gate above is all the permission it needs). Stamp ts
+    // strictly after every prior event so the boundary is unambiguous even
+    // against backdated expenses; balances reset from here for the next period.
+    const note = body.note
+    if (note !== undefined && typeof note !== 'string') {
+      return json({ error: 'note must be a string' }, 400)
+    }
+    const maxRow = await env.DB.prepare(
+      `SELECT MAX(ts) AS ts FROM events WHERE group_id = ?`,
+    ).bind(id).first<{ ts: number | null }>()
+    ts = Math.max(Date.now(), (maxRow?.ts ?? 0) + 1)
+    payload = {}
+    if (typeof note === 'string' && note.trim()) payload.note = note.trim()
   }
 
   const eventId = randomId(12)

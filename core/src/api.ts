@@ -8,7 +8,7 @@
 // it to a GH login server-side; the client never has to think about
 // scopes, gist permissions, or who can read what.
 
-import type { AdminGroupSummary, AdminUserSummary, EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from './types'
+import type { AdminGroupSummary, AdminUserSummary, EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, SettleEvent, VoidEvent } from './types'
 
 let _baseUrl: string | undefined
 let _token: string | null = null
@@ -144,12 +144,15 @@ export type NewVoid = Omit<VoidEvent, 'id' | 'ts' | 'author'>
 /** Payload for an edit — server fills in id, ts (audit), author. `amount`
  *  and `date` are the expense's new figures; `targetId` is the expense edited. */
 export type NewEdit = Omit<EditEvent, 'id' | 'ts' | 'author'>
+/** Payload for a settle checkpoint — server fills in id, ts (the clear
+ *  instant), author. Just an optional note. */
+export type NewSettle = Omit<SettleEvent, 'id' | 'ts' | 'author'>
 
 export const postEvent = (
   groupId: string,
-  event: NewExpense | NewVoid | NewEdit,
-): Promise<ExpenseEvent | VoidEvent | EditEvent> =>
-  call<ExpenseEvent | VoidEvent | EditEvent>(
+  event: NewExpense | NewVoid | NewEdit | NewSettle,
+): Promise<ExpenseEvent | VoidEvent | EditEvent | SettleEvent> =>
+  call<ExpenseEvent | VoidEvent | EditEvent | SettleEvent>(
     `/groups/${encodeURIComponent(groupId)}/events`,
     { method: 'POST', body: JSON.stringify(event) },
   )
@@ -169,4 +172,8 @@ export function makeVoid(input: Omit<NewVoid, 'type'>): NewVoid {
 
 export function makeEdit(input: Omit<NewEdit, 'type'>): NewEdit {
   return { type: 'edit', ...input }
+}
+
+export function makeSettle(input: Omit<NewSettle, 'type'> = {}): NewSettle {
+  return { type: 'settle', ...input }
 }

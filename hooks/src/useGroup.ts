@@ -20,8 +20,11 @@ import {
   makeExpense,
   makeVoid,
   makeEdit,
+  makeSettle,
   computeBalances,
   settle,
+  sinceLastSettle,
+  lastSettleTs,
   latestEditByTarget,
   parseAmount,
   type Group,
@@ -45,6 +48,9 @@ export interface ExpenseView {
   effNote?: string
   isVoided: boolean
   edited: boolean
+  /** Sits before the latest settle checkpoint — frozen as a paid-off record,
+   *  so it can't be voided or edited and renders muted. */
+  isSettled: boolean
   canVoid: boolean
   canEdit: boolean
 }
@@ -75,6 +81,10 @@ export interface UseGroup {
   isOwner: boolean
   isMember: boolean
   isFinalized: boolean
+  /** Current-period balances are all zero — nothing left to settle. */
+  isEven: boolean
+  /** Unix ms of the last settle checkpoint, or undefined if never cleared. */
+  lastSettledAt?: number
   shareUrl: string
   /** Effective figures + permission flags for one expense row. */
   expenseView: (e: ExpenseEvent) => ExpenseView
@@ -89,6 +99,9 @@ export interface UseGroup {
   addExpense: (input: AddExpenseInput) => Promise<boolean>
   voidExpense: (targetId: string) => Promise<void>
   saveEdit: (targetId: string, input: { amountStr: string; dateMs: number; note?: string }) => Promise<boolean>
+  /** Stamp a clear-the-slate checkpoint: the current balances are settled up,
+   *  the period resets, the group stays open. Any member may call it. */
+  settleUp: (note?: string) => Promise<void>
   finalize: () => Promise<void>
   reopen: () => Promise<void>
   addFriend: (login: Member) => Promise<void>
@@ -131,11 +144,35 @@ export function useGroup(groupId: string, me: Member): UseGroup {
     return Array.from(set)
   }, [group])
 
+  // Live settlement is scoped to the *current period* — the events appended
+  // since the last settle checkpoint. A group that's never been settled slices
+  // to its whole log, so this is a no-op for the common case.
+  const currentEvents = useMemo(
+    () => (group ? sinceLastSettle(group.events) : []),
+    [group],
+  )
+  const lastSettledAt = useMemo(
+    () => (group ? lastSettleTs(group.events) : undefined),
+    [group],
+  )
   const balances = useMemo(
-    () => (group ? computeBalances(group.events, settlementRoster) : []),
-    [group, settlementRoster],
+    () => (group ? computeBalances(currentEvents, settlementRoster) : []),
+    [group, currentEvents, settlementRoster],
   )
   const transfers = useMemo(() => settle(balances), [balances])
+  const isEven = useMemo(() => balances.every(b => b.balance === 0), [balances])
+  // Ids of expenses that fall on or before the last settle checkpoint — frozen
+  // history. Keyed by id (off the original append ts) so the flag is stable
+  // whether the caller hands expenseView a raw or an edit-folded expense.
+  const settledIds = useMemo(() => {
+    const s = new Set<string>()
+    if (group && lastSettledAt != null) {
+      for (const e of group.events) {
+        if (e.type === 'expense' && new Date(e.ts).getTime() <= lastSettledAt) s.add(e.id)
+      }
+    }
+    return s
+  }, [group, lastSettledAt])
   const maxBalance = useMemo(
     () => balances.reduce((m, b) => Math.max(m, Math.abs(b.balance)), 0),
     [balances],
@@ -163,6 +200,10 @@ export function useGroup(groupId: string, me: Member): UseGroup {
     (e: ExpenseEvent): ExpenseView => {
       const edit = edits.get(e.id)
       const isVoided = voided.has(e.id)
+      // A period boundary is by the expense's own (append/backdate) instant;
+      // settledIds is precomputed off that so the flag matches the server's
+      // freeze guard even when the caller passes an edit-folded expense.
+      const isSettled = settledIds.has(e.id)
       return {
         effAmount: edit ? edit.amount : e.amount,
         effDateMs: edit ? edit.date : new Date(e.ts).getTime(),
@@ -171,13 +212,15 @@ export function useGroup(groupId: string, me: Member): UseGroup {
         effNote: edit && edit.note !== undefined ? edit.note || undefined : e.note,
         isVoided,
         edited: !!edit,
-        // Owner can void anything; others only their own. Frozen when finalized.
-        canVoid: (isOwner || e.author === me) && !isVoided && !isFinalized,
+        isSettled,
+        // Owner can void anything; others only their own. Frozen once finalized
+        // or once the expense falls into a settled period.
+        canVoid: (isOwner || e.author === me) && !isVoided && !isFinalized && !isSettled,
         // Edit is the author's alone (server only accepts edits from them).
-        canEdit: e.author === me && !isVoided && !isFinalized,
+        canEdit: e.author === me && !isVoided && !isFinalized && !isSettled,
       }
     },
-    [edits, voided, isOwner, isFinalized, me],
+    [edits, voided, settledIds, isOwner, isFinalized, me],
   )
 
   // Wrap an action with busy/error bookkeeping.
@@ -211,6 +254,13 @@ export function useGroup(groupId: string, me: Member): UseGroup {
   )
   const voidExpense = useCallback(
     (targetId: string) => run(async () => { await postEvent(groupId, makeVoid({ targetId })); await refresh() }),
+    [run, groupId, refresh],
+  )
+  const settleUp = useCallback(
+    (note?: string) => run(async () => {
+      await postEvent(groupId, makeSettle(note?.trim() ? { note: note.trim() } : {}))
+      await refresh()
+    }),
     [run, groupId, refresh],
   )
 
@@ -311,8 +361,8 @@ export function useGroup(groupId: string, me: Member): UseGroup {
     group, loading, busy, error,
     setError, clearError: () => setError(null), refresh,
     balances, transfers, maxBalance, settlementRoster,
-    isOwner, isMember, isFinalized, shareUrl, expenseView,
+    isOwner, isMember, isFinalized, isEven, lastSettledAt, shareUrl, expenseView,
     friends, availableFriends, loadFriends,
-    join, addExpense, voidExpense, saveEdit, finalize, reopen, addFriend, removeSelfOrMember,
+    join, addExpense, voidExpense, saveEdit, settleUp, finalize, reopen, addFriend, removeSelfOrMember,
   }
 }
