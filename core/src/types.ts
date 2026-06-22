@@ -78,7 +78,7 @@ export interface AdminUserSummary {
   lastActiveAt?: number
 }
 
-export type Event = ExpenseEvent | VoidEvent | EditEvent
+export type Event = ExpenseEvent | VoidEvent | EditEvent | SettleEvent
 
 export interface ExpenseEvent {
   id: string
@@ -122,6 +122,23 @@ export interface EditEvent {
   /** New note. When present it overrides the target's note — an empty string
    *  clears it. When absent (legacy edits predating note-editing) the original
    *  note rides along untouched. */
+  note?: string
+}
+
+/** A "clear the slate" checkpoint. Any member can stamp one to record that,
+ *  as of `ts`, the group is settled up: balance computation resets here and
+ *  the prior expenses freeze as a paid-off record. Repeatable and non-terminal
+ *  — unlike a finalize, the group stays open afterwards. The checkpoint itself
+ *  is the proof everyone was even at that instant. */
+export interface SettleEvent {
+  id: string
+  type: 'settle'
+  /** Server-assigned ISO timestamp — the clear instant. Stamped strictly
+   *  after every prior event in the group so it cleanly bounds the period
+   *  even against backdated expenses. */
+  ts: string
+  author: Member
+  /** Optional human note, e.g. "June rent squared up". */
   note?: string
 }
 

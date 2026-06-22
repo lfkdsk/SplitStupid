@@ -153,6 +153,17 @@ export default function AdminGroup({ groupId, me }: { groupId: string; me: strin
                   </div>
                 )
               }
+              if (e.type === 'settle') {
+                return (
+                  <div key={e.id} className="settle-divider" role="separator">
+                    <span className="settle-divider-rule" />
+                    <span className="settle-divider-label">
+                      ✓ Settled up · {fmtDate(e.ts)}{e.note ? ` · ${e.note}` : ''}
+                    </span>
+                    <span className="settle-divider-rule" />
+                  </div>
+                )
+              }
               const { effAmount, effDateMs, effNote, isVoided, edited } = expenseView(e)
               return (
                 <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>

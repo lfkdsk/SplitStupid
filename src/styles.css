@@ -895,6 +895,69 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   vertical-align: middle;
 }
 
+/* Inline "settled" pill — same shape as the edited tag but in the positive
+   tone, since the entry now belongs to a paid-off, frozen period. */
+.event-settled-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--positive-bg);
+  color: var(--positive);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* Expenses below a settle line are frozen history — dim them, but no
+   strike-through (they were paid, not voided). */
+.event.settled { opacity: 0.55; }
+
+/* "Settled up · <date>" divider drawn across the activity feed at each
+   checkpoint — the proof everyone was even at that instant. */
+.settle-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0;
+}
+.settle-divider-rule {
+  flex: 1;
+  border-top: 1px dashed var(--border-strong, rgba(26, 20, 16, 0.22));
+}
+.settle-divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: var(--positive-bg);
+  color: var(--positive);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Full-width "Settle up" CTA under the suggested transfers. Positive-toned so
+   it reads as the affirmative "we're square" action, distinct from the accent
+   Add-expense button. */
+.settle-btn {
+  margin-top: 16px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: var(--positive);
+  color: var(--accent-fg);
+  border: none;
+}
+.settle-btn:hover:not(:disabled) { filter: brightness(1.08); }
+
 /* Errors */
 .error {
   background: var(--negative-bg);

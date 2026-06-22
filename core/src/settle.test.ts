@@ -5,6 +5,8 @@ import {
   latestEditByTarget,
   applyEdit,
   settle,
+  sinceLastSettle,
+  lastSettleTs,
   realCostByMember,
   formatAmount,
   parseAmount,
@@ -36,6 +38,9 @@ function editEv(targetId: string, amount: number, date: number, ts?: string, not
     author: 'x', targetId, amount, date,
     ...(note !== undefined ? { note } : {}),
   }
+}
+function settleEv(ts?: string): Event {
+  return { id: `s${++seq}`, type: 'settle', ts: ts ?? new Date(1_700_001_000_000 + seq).toISOString(), author: 'x' }
 }
 
 const sum = (bs: Balance[]) => bs.reduce((a, b) => a + b.balance, 0)
@@ -105,6 +110,74 @@ describe('computeBalances', () => {
       { member: 'alice', balance: 1000 },
       { member: 'bob', balance: -1000 },
     ])
+  })
+})
+
+// ----- settle checkpoints (period slicing) ------------------------------
+
+describe('sinceLastSettle', () => {
+  it('returns the whole log when there is no settle', () => {
+    const events = [
+      expense({ id: 'e1', payer: 'a', amount: 100, participants: ['a'] }),
+      expense({ id: 'e2', payer: 'b', amount: 200, participants: ['b'] }),
+    ]
+    expect(sinceLastSettle(events).map(e => e.id)).toEqual(['e1', 'e2'])
+  })
+
+  it('returns only events appended after the last settle', () => {
+    const events: Event[] = [
+      expense({ id: 'e1', payer: 'a', amount: 100, participants: ['a'] }),
+      settleEv(),
+      expense({ id: 'e2', payer: 'b', amount: 200, participants: ['b'] }),
+    ]
+    expect(sinceLastSettle(events).map(e => e.id)).toEqual(['e2'])
+  })
+
+  it('cuts at the most recent settle when there are several', () => {
+    const events: Event[] = [
+      expense({ id: 'e1', payer: 'a', amount: 100, participants: ['a'] }),
+      settleEv(),
+      expense({ id: 'e2', payer: 'b', amount: 200, participants: ['b'] }),
+      settleEv(),
+      expense({ id: 'e3', payer: 'c', amount: 300, participants: ['c'] }),
+    ]
+    expect(sinceLastSettle(events).map(e => e.id)).toEqual(['e3'])
+  })
+
+  it('is empty right after a settle with nothing logged since', () => {
+    const events: Event[] = [
+      expense({ id: 'e1', payer: 'a', amount: 100, participants: ['a'] }),
+      settleEv(),
+    ]
+    expect(sinceLastSettle(events)).toEqual([])
+  })
+
+  it('drives a balance reset: only the current period counts', () => {
+    const events: Event[] = [
+      expense({ id: 'e1', payer: 'alice', amount: 1000, participants: ['alice', 'bob'] }),
+      settleEv(),
+      expense({ id: 'e2', payer: 'bob', amount: 400, participants: ['alice', 'bob'] }),
+    ]
+    const bal = computeBalances(sinceLastSettle(events), ['alice', 'bob'])
+    expect(bal).toEqual([
+      { member: 'alice', balance: -200 }, // owes their half of bob's 400
+      { member: 'bob', balance: 200 },
+    ])
+  })
+})
+
+describe('lastSettleTs', () => {
+  it('is undefined when the group was never settled', () => {
+    expect(lastSettleTs([expense({ id: 'e1', payer: 'a', amount: 1, participants: ['a'] })])).toBeUndefined()
+  })
+
+  it('returns the ms of the most recent settle', () => {
+    const events: Event[] = [
+      settleEv('2024-01-01T00:00:00.000Z'),
+      expense({ id: 'e1', payer: 'a', amount: 1, participants: ['a'] }),
+      settleEv('2024-06-01T00:00:00.000Z'),
+    ]
+    expect(lastSettleTs(events)).toBe(Date.parse('2024-06-01T00:00:00.000Z'))
   })
 })
 

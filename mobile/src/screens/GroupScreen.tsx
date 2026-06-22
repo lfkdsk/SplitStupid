@@ -16,7 +16,7 @@ import QRCode from 'react-native-qrcode-svg'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { amountToInput, effectiveExpenses, formatAmount, type ExpenseEvent, type Member } from '@splitstupid/core'
+import { amountToInput, effectiveExpenses, formatAmount, type ExpenseEvent, type Member, type SettleEvent } from '@splitstupid/core'
 import { useGroup, type AddExpenseInput } from '@splitstupid/hooks'
 import type { RootStackParamList } from '../navigation/types'
 import { useAuth } from '../auth/AuthContext'
@@ -36,8 +36,8 @@ export default function GroupScreen({ route, navigation }: Props) {
   // All page logic from the shared hook — same as the web Group page.
   const {
     group, loading, error, setError, refresh, busy,
-    balances, transfers, maxBalance, settlementRoster, isOwner, isMember, isFinalized, shareUrl,
-    join, addExpense, voidExpense, saveEdit, finalize, reopen, expenseView,
+    balances, transfers, maxBalance, settlementRoster, isOwner, isMember, isFinalized, isEven, lastSettledAt, shareUrl,
+    join, addExpense, voidExpense, saveEdit, settleUp, finalize, reopen, expenseView,
     friends, availableFriends, loadFriends, addFriend, removeSelfOrMember,
   } = useGroup(groupId, myLogin)
 
@@ -68,6 +68,18 @@ export default function GroupScreen({ route, navigation }: Props) {
   const expenses = effectiveExpenses(group.events)
   const total = expenses.reduce((a, e) => a + e.amount, 0)
 
+  // Display timeline: surviving (edit-folded) expenses interleaved with settle
+  // checkpoints, in reverse append order, so the feed shows "Settled up"
+  // dividers between periods (mirrors the web activity feed).
+  type Row = { kind: 'expense'; e: ExpenseEvent } | { kind: 'settle'; e: SettleEvent }
+  const effById = new Map(expenses.map(e => [e.id, e]))
+  const timeline: Row[] = []
+  for (const ev of group.events) {
+    if (ev.type === 'expense' && effById.has(ev.id)) timeline.push({ kind: 'expense', e: effById.get(ev.id)! })
+    else if (ev.type === 'settle') timeline.push({ kind: 'settle', e: ev })
+  }
+  timeline.reverse()
+
   function confirmFinalize() {
     Alert.alert('Finalize group', `Lock "${group!.name}"? No one can add expenses or change the roster until you reopen.`,
       [{ text: 'Not yet', style: 'cancel' }, { text: 'Finalize', style: 'destructive', onPress: () => finalize() }])
@@ -75,6 +87,13 @@ export default function GroupScreen({ route, navigation }: Props) {
   function confirmReopen() {
     Alert.alert('Reopen group', `Unlock "${group!.name}" so members can add expenses again?`,
       [{ text: 'Cancel', style: 'cancel' }, { text: 'Reopen', onPress: () => reopen() }])
+  }
+  function confirmSettle() {
+    Alert.alert(
+      'Settle up',
+      `Mark "${group!.name}" settled up to here? The current balances reset to zero and the group stays open — earlier expenses freeze as a paid-off record.`,
+      [{ text: 'Not yet', style: 'cancel' }, { text: 'Settle up', onPress: () => settleUp() }],
+    )
   }
   function confirmVoid(e: ExpenseEvent) {
     Alert.alert('Void expense', `Strike ${e.payer}'s ${formatAmount(e.amount, group!.currency)}${e.note ? ` for "${e.note}"` : ''} from the ledger? It drops out of the settlement.`,
@@ -242,11 +261,18 @@ export default function GroupScreen({ route, navigation }: Props) {
         </Card>
       )}
 
-      {/* Settlement. */}
+      {/* Settlement — scoped to the current period (since the last settle). */}
       <Card style={{ gap: space(2) }}>
-        <SectionLabel>Settlement</SectionLabel>
-        {balances.every(b => b.balance === 0) ? (
-          <Text style={styles.allSquare}>All settled up.</Text>
+        <View style={styles.headRow}>
+          <SectionLabel>Settlement</SectionLabel>
+          {lastSettledAt ? (
+            <Text style={styles.total}>since {new Date(lastSettledAt).toLocaleDateString()}</Text>
+          ) : null}
+        </View>
+        {isEven ? (
+          <Text style={styles.allSquare}>
+            All settled up.{lastSettledAt ? ` Cleared ${new Date(lastSettledAt).toLocaleDateString()}.` : ''}
+          </Text>
         ) : (
           <>
             {balances.map(b => {
@@ -287,6 +313,14 @@ export default function GroupScreen({ route, navigation }: Props) {
                 ))}
               </View>
             )}
+            {isMember && !isFinalized && (
+              <Button
+                title="Settle up — mark everyone paid"
+                onPress={confirmSettle}
+                loading={busy}
+                style={{ marginTop: space(2) }}
+              />
+            )}
           </>
         )}
       </Card>
@@ -302,18 +336,32 @@ export default function GroupScreen({ route, navigation }: Props) {
           <SectionLabel>Activity</SectionLabel>
           <Text style={styles.total}>Total {formatAmount(total, group.currency)}</Text>
         </View>
-        {expenses.length === 0 ? (
+        {timeline.length === 0 ? (
           <Text style={styles.allSquare}>No expenses yet.</Text>
         ) : (
-          [...expenses].reverse().map(e => {
+          timeline.map(row => {
+            if (row.kind === 'settle') {
+              const s = row.e
+              return (
+                <View key={s.id} style={styles.settleDivider}>
+                  <View style={styles.settleDividerLine} />
+                  <Text style={styles.settleDividerLabel}>
+                    ✓ Settled up · {new Date(s.ts).toLocaleDateString()}{s.note ? ` · ${s.note}` : ''}
+                  </Text>
+                  <View style={styles.settleDividerLine} />
+                </View>
+              )
+            }
+            const e = row.e
             const ev = expenseView(e)
             return (
-              <View key={e.id} style={styles.activityRow}>
+              <View key={e.id} style={[styles.activityRow, ev.isSettled && { opacity: 0.55 }]}>
                 <Avatar login={e.payer} size={36} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.activityTitle}>
                     {e.payer} paid {formatAmount(ev.effAmount, group.currency)}
                     {ev.edited ? <Text style={styles.editedTag}>  edited</Text> : null}
+                    {ev.isSettled ? <Text style={styles.editedTag}>  settled</Text> : null}
                   </Text>
                   {e.note ? <Text style={styles.activityNote}>“{e.note}”</Text> : null}
                   <Text style={styles.activitySplit}>split among {e.participants.join(', ')}</Text>
@@ -637,6 +685,9 @@ const styles = StyleSheet.create({
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingTop: 2 },
   editBtn: { fontSize: 12, color: colors.fgMuted, fontFamily: fonts.sans, fontWeight: '600' },
   voidBtn: { fontSize: 12, color: colors.negative, fontFamily: fonts.sans, fontWeight: '600' },
+  settleDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: space(2) },
+  settleDividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
+  settleDividerLabel: { fontSize: 11, color: colors.positive, fontFamily: fonts.mono, flexShrink: 1, textAlign: 'center' },
   input: {
     height: 44,
     borderWidth: 1,

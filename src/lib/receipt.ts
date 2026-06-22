@@ -9,7 +9,7 @@
 // clipping path tight: we never have to overshoot or guess.
 
 import type { Balance, ExpenseEvent, Group, Transfer } from '@splitstupid/core'
-import { effectiveExpenses, formatAmount, realCostByMember } from '@splitstupid/core'
+import { effectiveExpenses, formatAmount, realCostByMember, sinceLastSettle } from '@splitstupid/core'
 
 const PAPER = '#faf6ef'
 const INK = '#1a1410'
@@ -193,8 +193,12 @@ function buildBlocks(
   blocks.push(spacer(12))
 
   // Voided rows dropped, edits folded in — so amounts / dates here match the
-  // in-app ledger and the settlement section below.
-  const expenses = effectiveExpenses(group.events)
+  // in-app ledger and the settlement section below. Scoped to the current
+  // period (since the last settle) so the EXPENSES / TOTAL / REAL COST tie out
+  // against the SETTLEMENT balances, which are also current-period. A group
+  // that's never been settled slices to its whole log, so finalized-trip and
+  // legacy receipts are unchanged.
+  const expenses = effectiveExpenses(sinceLastSettle(group.events))
 
   let total = 0
   if (expenses.length === 0) {

@@ -71,6 +71,31 @@ export function applyEdit(e: ExpenseEvent, edit: EditEvent): ExpenseEvent {
   return next
 }
 
+// ---------------------------------------------------------------------------
+// Settle checkpoints. A `settle` event draws a line across the append-only
+// log: everything before it counts as paid up, and live settlement is computed
+// only over what came after. The server stamps a settle's ts strictly after
+// every prior event, and rejects backdating an expense to before the latest
+// settle — so in the ts-ordered log the last settle is an exact cut point and
+// slicing by position is unambiguous.
+
+// The events appended after the most recent settle checkpoint — the "current
+// period" the live balance / transfer view computes over. No settle yet ⇒ the
+// whole log (so a group that's never been cleared behaves exactly as before).
+export function sinceLastSettle(events: Event[]): Event[] {
+  let cut = -1
+  events.forEach((e, i) => { if (e.type === 'settle') cut = i })
+  return cut === -1 ? events : events.slice(cut + 1)
+}
+
+// Unix ms of the most recent settle checkpoint, or undefined if the group has
+// never been cleared. Lets the UI flag pre-line expenses as settled (frozen).
+export function lastSettleTs(events: Event[]): number | undefined {
+  let ts: number | undefined
+  for (const e of events) if (e.type === 'settle') ts = Date.parse(e.ts)
+  return ts
+}
+
 function applyExpense(balances: Map<Member, number>, e: ExpenseEvent): void {
   // Payer fronted the bill — their balance goes UP by the full amount.
   balances.set(e.payer, (balances.get(e.payer) ?? 0) + e.amount)
