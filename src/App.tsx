@@ -8,6 +8,7 @@ import Groups from './pages/Groups'
 import Group from './pages/Group'
 import Admin from './pages/Admin'
 import AdminGroup from './pages/AdminGroup'
+import { UserMenu } from './components/UserMenu'
 
 interface Me {
   login: string
@@ -107,14 +108,7 @@ export default function App() {
           <span className="brand-mark" aria-hidden="true" />
           SplitStupid
         </a>
-        <div className="user-pill">
-          <img src={me.avatar} alt="" />
-          <span className="user-pill-name">{me.login}</span>
-          {isAdmin(me.login) && (
-            <button className="ghost" onClick={() => { window.location.hash = '#/admin' }}>Admin</button>
-          )}
-          <button className="ghost" onClick={signOut}>Sign out</button>
-        </div>
+        <UserMenu login={me.login} avatar={me.avatar} onSignOut={signOut} />
       </header>
       {isAdmin(me.login) && adminGroupMatch
         ? <AdminGroup groupId={adminGroupMatch[1]} me={me.login} />
