@@ -150,34 +150,98 @@ a:hover {
 }
 .brand-mark::after { content: 'S'; transform: translateY(-1px); }
 
-.user-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px;
+/* Account menu — the header shows only the avatar; tapping it opens a popover
+   with the identity, Admin, and Sign out. iOS-style, and it keeps the header
+   uncrowded on narrow screens (the old inline pill overflowed on mobile). */
+.user-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.user-avatar-btn {
+  padding: 2px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   border-radius: var(--radius-full);
-  font-size: 13px;
-  color: var(--fg);
+  cursor: pointer;
+  display: inline-flex;
+  line-height: 0;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-
-.user-pill img {
-  width: 22px;
-  height: 22px;
+.user-avatar-btn:hover { border-color: var(--border-strong); }
+.user-avatar-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.user-avatar-btn img {
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
+  display: block;
 }
 
-.user-pill-name {
-  padding: 0 4px;
-  font-weight: 500;
+.user-menu-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  min-width: 208px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
 }
 
-.user-pill button {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: var(--radius-full);
+.user-menu-id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
 }
+.user-menu-id img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.user-menu-id-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.user-menu-id-label {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.user-menu-id-login {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  font-size: 14px;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.user-menu-item:hover { background: var(--bg-subtle); }
+.user-menu-item.danger { color: var(--negative); }
+.user-menu-item.danger:hover { background: var(--negative-bg); }
 
 /* Cards */
 .card {
