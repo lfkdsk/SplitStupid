@@ -60,6 +60,24 @@ export interface AdminGroupSummary {
   finalizedAt?: number
 }
 
+/** Row shape returned by the read-only admin user roster (GET /admin/users).
+ *  There's no users table — a "user" is just a GH login that shows up as a
+ *  group owner, member, and/or event author — so these are aggregates over
+ *  those facts. */
+export interface AdminUserSummary {
+  login: Member
+  /** Groups this login owns. */
+  owned: number
+  /** Groups this login currently belongs to. Owners are auto-added as
+   *  members, so this count includes the groups they own. */
+  memberships: number
+  /** Active (non-voided) expenses this login recorded. */
+  expenseCount: number
+  /** Unix ms of the last event they authored. Undefined if they've joined a
+   *  group but never recorded anything. */
+  lastActiveAt?: number
+}
+
 export type Event = ExpenseEvent | VoidEvent | EditEvent
 
 export interface ExpenseEvent {

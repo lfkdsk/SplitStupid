@@ -39,6 +39,7 @@ identity via GitHub's `/user` endpoint.
 | DELETE | `/groups/:id/members/:login` |                                  | Owner kicks, or member self-leaves.              |
 | POST   | `/groups/:id/events`       | `{type, ...}`                      | Member only. Voids: owner ∨ author. Edits: author only. |
 | GET    | `/admin/groups`            |                                    | **Admin only** (`ADMIN_LOGINS`). Every group; 403 otherwise. |
+| GET    | `/admin/users`             |                                    | **Admin only** (`ADMIN_LOGINS`). Every login + stats; 403 otherwise. |
 
 `/admin/groups` is a read-only operator overview — every group in the system
 with its roster, active-expense count, and finalized state. It's gated on the
@@ -46,6 +47,12 @@ with its roster, active-expense count, and finalized state. It's gated on the
 non-admin caller gets a 403. There's no admin *detail* endpoint: `GET
 /groups/:id` already returns full detail for any id regardless of membership,
 so the admin UI reuses it.
+
+`/admin/users` is the matching user roster, same `ADMIN_LOGINS` gate. There's
+no users table — a "user" is just a GH login that appears as a group owner,
+member, and/or event author — so the endpoint returns the UNION of those
+logins with per-user aggregates: `{ login, owned, memberships, expenseCount,
+lastActiveAt? }`.
 
 Event payloads:
 ```jsonc
