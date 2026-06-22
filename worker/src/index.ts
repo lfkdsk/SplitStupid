@@ -19,6 +19,10 @@
 interface Env {
   DB: D1Database
   ALLOWED_ORIGINS: string
+  // Comma-separated GH logins allowed to hit the read-only /admin/* routes.
+  // The real access boundary lives here on the server — the frontend only
+  // uses its own copy to decide whether to show the Admin link.
+  ADMIN_LOGINS: string
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +123,14 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
   if (path === '/friends') {
     if (method === 'GET') return await listFriends(env, me)
     return new Response('method not allowed', { status: 405 })
+  }
+
+  // Read-only admin surface. Gated on ADMIN_LOGINS — a non-admin gets a 403
+  // (not a 404) so the route's existence isn't a secret; only its data is.
+  if (path === '/admin/groups') {
+    if (method !== 'GET') return new Response('method not allowed', { status: 405 })
+    if (!isAdmin(me, env)) return json({ error: 'admin only' }, 403)
+    return await listAllGroups(env)
   }
 
   // /groups/:id ...
@@ -281,6 +293,57 @@ async function listGroups(env: Env, me: string): Promise<Response> {
     createdAt: r.created_at,
     finalizedAt: r.finalized_at ?? undefined,
   })))
+}
+
+// GET /admin/groups — every group in the database, no owner/member filter.
+// Read-only overview for an operator. Shares listGroups' two-extra-queries
+// shape (rosters + active-expense counts) but drops the per-caller `role`
+// (an admin is usually neither owner nor member of what they're inspecting)
+// in favour of a plain memberCount. Caller is already admin-gated in route().
+async function listAllGroups(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT id, name, currency, owner_login, created_at, finalized_at
+     FROM groups ORDER BY created_at DESC`,
+  ).all<GroupRow>()
+
+  const ids = (rows.results || []).map(r => r.id)
+  if (ids.length === 0) return json([])
+
+  const placeholders = ids.map(() => '?').join(',')
+  const memberRows = await env.DB.prepare(
+    `SELECT group_id, login FROM members WHERE group_id IN (${placeholders}) ORDER BY joined_at ASC`,
+  ).bind(...ids).all<{ group_id: string; login: string }>()
+
+  const eventCounts = await env.DB.prepare(
+    `SELECT group_id, COUNT(*) AS n FROM events
+     WHERE group_id IN (${placeholders}) AND type = 'expense'
+       AND id NOT IN (SELECT json_extract(payload,'$.targetId') FROM events
+                      WHERE group_id IN (${placeholders}) AND type = 'void')
+     GROUP BY group_id`,
+  ).bind(...ids, ...ids).all<{ group_id: string; n: number }>()
+
+  const membersByGroup = new Map<string, string[]>()
+  for (const m of memberRows.results || []) {
+    if (!membersByGroup.has(m.group_id)) membersByGroup.set(m.group_id, [])
+    membersByGroup.get(m.group_id)!.push(m.login)
+  }
+  const countsByGroup = new Map<string, number>()
+  for (const c of eventCounts.results || []) countsByGroup.set(c.group_id, c.n)
+
+  return json((rows.results || []).map(r => {
+    const members = membersByGroup.get(r.id) || [r.owner_login]
+    return {
+      id: r.id,
+      name: r.name,
+      currency: r.currency,
+      owner: r.owner_login,
+      members,
+      memberCount: members.length,
+      eventCount: countsByGroup.get(r.id) || 0,
+      createdAt: r.created_at,
+      finalizedAt: r.finalized_at ?? undefined,
+    }
+  }))
 }
 
 // GET /groups/:id/invite — public, no auth. Minimal preview so a
@@ -672,6 +735,18 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
 
 // ---------------------------------------------------------------------------
 // Helpers
+
+// Is this login allowed on the /admin/* routes? ADMIN_LOGINS is a
+// comma-separated allowlist. Compared case-insensitively since GitHub logins
+// are case-insensitive (the /user login we resolved is canonical-cased, but
+// the configured list might not be).
+function isAdmin(me: string, env: Env): boolean {
+  const admins = (env.ADMIN_LOGINS || '')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean)
+  return admins.includes(me.toLowerCase())
+}
 
 function stringField(v: unknown, name: string, min: number, max: number): string | Response {
   if (typeof v !== 'string') return json({ error: `${name} must be a string` }, 400)

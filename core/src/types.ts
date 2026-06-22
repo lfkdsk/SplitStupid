@@ -43,6 +43,23 @@ export interface GroupSummary {
   finalizedAt?: number
 }
 
+/** Row shape returned by the read-only admin overview (GET /admin/groups).
+ *  Like GroupSummary but for *every* group in the system, so it drops the
+ *  caller-relative `role` (an admin is usually neither owner nor member of
+ *  what they inspect) and carries an explicit `memberCount`. */
+export interface AdminGroupSummary {
+  id: string
+  name: string
+  currency: string
+  owner: Member
+  members: Member[]
+  memberCount: number
+  /** Active expense count (voided ones excluded). */
+  eventCount: number
+  createdAt: number
+  finalizedAt?: number
+}
+
 export type Event = ExpenseEvent | VoidEvent | EditEvent
 
 export interface ExpenseEvent {

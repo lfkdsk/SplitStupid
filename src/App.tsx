@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { fetchMe, setApiToken } from '@splitstupid/core'
 import { clearToken, consumeOAuthCallback, loadToken, saveToken } from './lib/oauth'
+import { isAdmin } from './lib/admin'
 import Setup from './pages/Setup'
 import Invite from './pages/Invite'
 import Groups from './pages/Groups'
 import Group from './pages/Group'
+import Admin from './pages/Admin'
+import AdminGroup from './pages/AdminGroup'
 
 interface Me {
   login: string
@@ -76,6 +79,10 @@ export default function App() {
   if (booting) return <div className="app"><p className="muted">Loading…</p></div>
 
   const groupMatch = hash.match(/^#\/g\/([A-Za-z0-9]+)$/)
+  // Admin routes (#/admin, #/admin/g/<id>) are only honoured for admin logins;
+  // a non-admin who types the URL just falls through to their own dashboard.
+  // The server is the real gate — these checks only keep the UI tidy.
+  const adminGroupMatch = hash.match(/^#\/admin\/g\/([A-Za-z0-9]+)$/)
 
   if (!token || !me) {
     // A share link (#/g/<id>) opened by someone signed-out gets a
@@ -103,12 +110,19 @@ export default function App() {
         <div className="user-pill">
           <img src={me.avatar} alt="" />
           <span className="user-pill-name">{me.login}</span>
+          {isAdmin(me.login) && (
+            <button className="ghost" onClick={() => { window.location.hash = '#/admin' }}>Admin</button>
+          )}
           <button className="ghost" onClick={signOut}>Sign out</button>
         </div>
       </header>
-      {groupMatch
-        ? <Group groupId={groupMatch[1]} me={me.login} />
-        : <Groups me={me.login} />}
+      {isAdmin(me.login) && adminGroupMatch
+        ? <AdminGroup groupId={adminGroupMatch[1]} me={me.login} />
+        : isAdmin(me.login) && hash === '#/admin'
+          ? <Admin />
+          : groupMatch
+            ? <Group groupId={groupMatch[1]} me={me.login} />
+            : <Groups me={me.login} />}
     </div>
   )
 }
