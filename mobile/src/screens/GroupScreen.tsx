@@ -1,6 +1,9 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,7 +16,7 @@ import QRCode from 'react-native-qrcode-svg'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { effectiveExpenses, formatAmount, type ExpenseEvent, type Member } from '@splitstupid/core'
+import { amountToInput, effectiveExpenses, formatAmount, type ExpenseEvent, type Member } from '@splitstupid/core'
 import { useGroup, type AddExpenseInput } from '@splitstupid/hooks'
 import type { RootStackParamList } from '../navigation/types'
 import { useAuth } from '../auth/AuthContext'
@@ -34,7 +37,7 @@ export default function GroupScreen({ route, navigation }: Props) {
   const {
     group, loading, error, setError, refresh, busy,
     balances, transfers, maxBalance, settlementRoster, isOwner, isMember, isFinalized, shareUrl,
-    join, addExpense, voidExpense, finalize, reopen, expenseView,
+    join, addExpense, voidExpense, saveEdit, finalize, reopen, expenseView,
     friends, availableFriends, loadFriends, addFriend, removeSelfOrMember,
   } = useGroup(groupId, myLogin)
 
@@ -43,6 +46,7 @@ export default function GroupScreen({ route, navigation }: Props) {
   const [addingFriend, setAddingFriend] = useState<string | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)    // receipt image sheet
   const [postcardOpen, setPostcardOpen] = useState(false)  // trip postcard (finalized only)
+  const [editTarget, setEditTarget] = useState<ExpenseEvent | null>(null) // expense being edited
 
   useFocusEffect(useCallback(() => { refresh() }, [refresh]))
 
@@ -314,10 +318,19 @@ export default function GroupScreen({ route, navigation }: Props) {
                   {e.note ? <Text style={styles.activityNote}>“{e.note}”</Text> : null}
                   <Text style={styles.activitySplit}>split among {e.participants.join(', ')}</Text>
                 </View>
-                {ev.canVoid && (
-                  <Pressable onPress={() => confirmVoid(e)} hitSlop={6} disabled={busy}>
-                    <Text style={styles.voidBtn}>void</Text>
-                  </Pressable>
+                {(ev.canEdit || ev.canVoid) && (
+                  <View style={styles.rowActions}>
+                    {ev.canEdit && (
+                      <Pressable onPress={() => setEditTarget(e)} hitSlop={6} disabled={busy}>
+                        <Text style={styles.editBtn}>edit</Text>
+                      </Pressable>
+                    )}
+                    {ev.canVoid && (
+                      <Pressable onPress={() => confirmVoid(e)} hitSlop={6} disabled={busy}>
+                        <Text style={styles.voidBtn}>void</Text>
+                      </Pressable>
+                    )}
+                  </View>
                 )}
               </View>
             )
@@ -327,6 +340,13 @@ export default function GroupScreen({ route, navigation }: Props) {
 
       <ShareImageSheet open={receiptOpen} onClose={() => setReceiptOpen(false)} group={group} balances={balances} transfers={transfers} />
       <ShareImageSheet open={postcardOpen} kind="postcard" onClose={() => setPostcardOpen(false)} group={group} balances={balances} transfers={transfers} />
+
+      <EditExpenseSheet
+        target={editTarget}
+        currency={group.currency}
+        onClose={() => setEditTarget(null)}
+        onSave={saveEdit}
+      />
     </ScrollView>
   )
 }
@@ -430,6 +450,103 @@ function AddExpense({
   )
 }
 
+// ----- edit-expense sheet ----------------------------------------------
+
+// Bottom sheet for amending an expense's amount / date / note in place. Seeds
+// from the *effective* expense (the activity row hands us already-folded
+// figures), and re-seeds whenever a different row opens it. Clearing the note
+// field removes the note; see EditEvent.note for the fold semantics.
+function EditExpenseSheet({
+  target,
+  currency,
+  onClose,
+  onSave,
+}: {
+  target: ExpenseEvent | null
+  currency: string
+  onClose: () => void
+  onSave: (targetId: string, input: { amountStr: string; dateMs: number; note: string }) => Promise<boolean>
+}) {
+  const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
+  const [date, setDate] = useState(new Date())
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!target) return
+    setAmount(amountToInput(target.amount, currency))
+    setNote(target.note ?? '')
+    setDate(new Date(target.ts))
+  }, [target, currency])
+
+  async function save() {
+    if (!target) return
+    setSaving(true)
+    const ok = await onSave(target.id, { amountStr: amount, dateMs: date.getTime(), note })
+    setSaving(false)
+    if (ok) onClose()
+  }
+
+  return (
+    <Modal visible={target != null} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.sheetBackdrop}
+      >
+        <View style={styles.sheet}>
+          <View style={styles.sheetHead}>
+            <Text style={styles.sheetTitle}>Edit expense</Text>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <Text style={styles.sheetClose}>✕</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.editHint}>
+            Adjust the amount, date, or note. Participants stay the same — the entry
+            is amended in place and flagged as edited.
+          </Text>
+          <View>
+            <Text style={styles.splitLabel}>Amount ({currency.toUpperCase()})</Text>
+            <TextInput
+              placeholder={`Amount (${currency.toUpperCase()})`}
+              placeholderTextColor={colors.fgSubtle}
+              keyboardType="decimal-pad"
+              value={amount}
+              onChangeText={setAmount}
+              style={styles.input}
+            />
+          </View>
+          <View>
+            <Text style={styles.splitLabel}>Note</Text>
+            <TextInput
+              placeholder="Note (optional, e.g. dinner at Sushi Aoki)"
+              placeholderTextColor={colors.fgSubtle}
+              value={note}
+              onChangeText={setNote}
+              style={styles.input}
+            />
+          </View>
+          <View>
+            <Text style={styles.splitLabel}>Date</Text>
+            <DateTimePicker
+              value={date}
+              mode="datetime"
+              display="compact"
+              maximumDate={new Date()}
+              themeVariant={isDark ? 'dark' : 'light'}
+              onChange={(_, d) => { if (d) setDate(d) }}
+              style={styles.datePicker}
+            />
+          </View>
+          <View style={styles.editActions}>
+            <Button title="Cancel" variant="secondary" onPress={onClose} style={{ flex: 1 }} />
+            <Button title="Save changes" onPress={save} loading={saving} style={{ flex: 1 }} />
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  )
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { padding: space(4), gap: space(3) },
@@ -517,6 +634,8 @@ const styles = StyleSheet.create({
   editedTag: { fontSize: 11, color: colors.fgSubtle, fontFamily: fonts.mono },
   activityNote: { fontSize: 14, color: colors.fgMuted, fontStyle: 'italic', marginTop: 2, fontFamily: fonts.display },
   activitySplit: { fontSize: 12, color: colors.fgSubtle, marginTop: 2, fontFamily: fonts.mono },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingTop: 2 },
+  editBtn: { fontSize: 12, color: colors.fgMuted, fontFamily: fonts.sans, fontWeight: '600' },
   voidBtn: { fontSize: 12, color: colors.negative, fontFamily: fonts.sans, fontWeight: '600' },
   input: {
     height: 44,
@@ -561,4 +680,19 @@ const styles = StyleSheet.create({
   checkPillOn: { backgroundColor: colors.accentBg, borderColor: colors.accent },
   checkPillText: { fontSize: 13, color: colors.fgMuted, fontFamily: fonts.sans },
   checkPillTextOn: { color: colors.accent, fontWeight: '600' },
+
+  // Edit-expense bottom sheet (mirrors ShareImageSheet's chrome).
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(26,20,16,0.45)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: space(4),
+    gap: space(3),
+  },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { fontSize: 18, fontWeight: '600', color: colors.fg, fontFamily: fonts.display },
+  sheetClose: { fontSize: 18, color: colors.fgMuted },
+  editHint: { fontSize: 13, color: colors.fgMuted, fontFamily: fonts.sans, lineHeight: 19 },
+  editActions: { flexDirection: 'row', gap: space(2), marginTop: space(1) },
 })

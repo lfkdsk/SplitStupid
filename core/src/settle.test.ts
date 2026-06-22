@@ -30,8 +30,12 @@ function expense(p: Partial<ExpenseEvent> & Pick<ExpenseEvent, 'payer' | 'amount
 function voidEv(targetId: string, ts?: string): Event {
   return { id: `v${++seq}`, type: 'void', ts: ts ?? new Date(1_700_000_500_000 + seq).toISOString(), author: 'x', targetId }
 }
-function editEv(targetId: string, amount: number, date: number, ts?: string): EditEvent {
-  return { id: `d${++seq}`, type: 'edit', ts: ts ?? new Date(1_700_000_900_000 + seq).toISOString(), author: 'x', targetId, amount, date }
+function editEv(targetId: string, amount: number, date: number, ts?: string, note?: string): EditEvent {
+  return {
+    id: `d${++seq}`, type: 'edit', ts: ts ?? new Date(1_700_000_900_000 + seq).toISOString(),
+    author: 'x', targetId, amount, date,
+    ...(note !== undefined ? { note } : {}),
+  }
 }
 
 const sum = (bs: Balance[]) => bs.reduce((a, b) => a + b.balance, 0)
@@ -128,6 +132,14 @@ describe('effectiveExpenses', () => {
     expect(eff[0].ts).toBe(new Date(Date.parse('2024-04-01')).toISOString())
   })
 
+  it('folds an edited note over the original', () => {
+    const events: Event[] = [
+      expense({ id: 'e1', payer: 'a', amount: 100, participants: ['a'], note: 'tacos' }),
+      editEv('e1', 100, Date.parse('2024-02-01'), '2024-03-01T00:00:00.000Z', 'burritos'),
+    ]
+    expect(effectiveExpenses(events)[0].note).toBe('burritos')
+  })
+
   it('preserves original append order', () => {
     const events: Event[] = [
       expense({ id: 'e1', payer: 'a', amount: 1, participants: ['a'] }),
@@ -153,14 +165,32 @@ describe('latestEditByTarget', () => {
 })
 
 describe('applyEdit', () => {
-  it('only touches amount + date, everything else rides along', () => {
+  it('touches amount + date, leaving payer / split / note when the edit omits a note', () => {
     const e = expense({ id: 'e1', payer: 'alice', amount: 100, participants: ['alice', 'bob'], split: { alice: 40, bob: 60 }, note: 'tacos' })
     const folded = applyEdit(e, editEv('e1', 250, Date.parse('2024-06-15')))
     expect(folded.amount).toBe(250)
     expect(folded.ts).toBe(new Date(Date.parse('2024-06-15')).toISOString())
     expect(folded.payer).toBe('alice')
     expect(folded.split).toEqual({ alice: 40, bob: 60 })
-    expect(folded.note).toBe('tacos')
+    expect(folded.note).toBe('tacos') // legacy edit (no note field) keeps the original
+  })
+
+  it('overrides the note when the edit carries one', () => {
+    const e = expense({ id: 'e1', payer: 'alice', amount: 100, participants: ['alice'], note: 'tacos' })
+    const folded = applyEdit(e, editEv('e1', 100, Date.parse('2024-06-15'), undefined, 'burritos'))
+    expect(folded.note).toBe('burritos')
+  })
+
+  it('clears the note when the edit carries an empty string', () => {
+    const e = expense({ id: 'e1', payer: 'alice', amount: 100, participants: ['alice'], note: 'tacos' })
+    const folded = applyEdit(e, editEv('e1', 100, Date.parse('2024-06-15'), undefined, ''))
+    expect(folded.note).toBeUndefined()
+  })
+
+  it('adds a note to an expense that had none', () => {
+    const e = expense({ id: 'e1', payer: 'alice', amount: 100, participants: ['alice'] })
+    const folded = applyEdit(e, editEv('e1', 100, Date.parse('2024-06-15'), undefined, 'sushi'))
+    expect(folded.note).toBe('sushi')
   })
 })
 

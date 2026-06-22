@@ -62,9 +62,13 @@ export function effectiveExpenses(events: Event[]): ExpenseEvent[] {
 }
 
 // Fold an edit's new figures onto its target expense. Payer / participants /
-// split / note ride along unchanged — an edit only ever touches amount + date.
+// split ride along unchanged. amount + date always apply; the note applies only
+// when the edit carries one — an empty string clears it, while a legacy edit
+// (no note field) leaves the original note in place.
 export function applyEdit(e: ExpenseEvent, edit: EditEvent): ExpenseEvent {
-  return { ...e, amount: edit.amount, ts: new Date(edit.date).toISOString() }
+  const next: ExpenseEvent = { ...e, amount: edit.amount, ts: new Date(edit.date).toISOString() }
+  if (edit.note !== undefined) next.note = edit.note || undefined
+  return next
 }
 
 function applyExpense(balances: Map<Member, number>, e: ExpenseEvent): void {
@@ -162,4 +166,13 @@ export function parseAmount(input: string, currency: string): number {
   if (!Number.isFinite(n)) return NaN
   if (zeroDecimal.has(currency.toUpperCase())) return Math.round(n)
   return Math.round(n * 100)
+}
+
+// Inverse of parseAmount: take a stored minor-unit amount back to the
+// human-typed major form for pre-filling an edit field. Mirrors the
+// zero-decimal currency set above.
+export function amountToInput(minor: number, currency: string): string {
+  const zeroDecimal = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
+  if (zeroDecimal.has(currency.toUpperCase())) return String(minor)
+  return (minor / 100).toFixed(2)
 }

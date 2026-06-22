@@ -68,9 +68,9 @@ export interface VoidEvent {
   reason?: string
 }
 
-/** Amends an existing expense's amount / date in place (the append-only
- *  alternative to a void+repost). `ts` is the audit instant — when the edit
- *  was recorded; the new *effective* expense date lives in `date`.
+/** Amends an existing expense's amount / date (and optionally note) in place
+ *  (the append-only alternative to a void+repost). `ts` is the audit instant —
+ *  when the edit was recorded; the new *effective* expense date lives in `date`.
  *  Settlement and the receipt fold the latest edit over its target. */
 export interface EditEvent {
   id: string
@@ -84,6 +84,10 @@ export interface EditEvent {
   amount: number
   /** New effective expense date, **unix ms**. */
   date: number
+  /** New note. When present it overrides the target's note — an empty string
+   *  clears it. When absent (legacy edits predating note-editing) the original
+   *  note rides along untouched. */
+  note?: string
 }
 
 export interface Transfer {
