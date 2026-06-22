@@ -715,7 +715,11 @@ const styles = StyleSheet.create({
   payerStrong: { fontWeight: '600' },
   amountInline: { flex: 1, height: 38, color: colors.fg, fontSize: 15, fontFamily: fonts.sans, padding: 0, textAlign: 'right' },
   splitLabel: { fontSize: 13, color: colors.fgMuted, marginBottom: 8, fontFamily: fonts.sans },
-  datePicker: { alignSelf: 'flex-start' },
+  // The compact iOS picker sizes to its own intrinsic width; flex-start let
+  // its date+time pill spill past the card's right edge on narrow phones.
+  // Stretch pins it to the card's content width so it lays its pills out
+  // within bounds (right-aligned, the iOS-standard placement).
+  datePicker: { alignSelf: 'stretch' },
   checkPill: {
     flexDirection: 'row',
     alignItems: 'center',
