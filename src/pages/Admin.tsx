@@ -1,11 +1,18 @@
-// Read-only operator view: every group in the system. Reuses the dashboard's
-// group-row styling, but with no create / delete / leave affordances — rows
-// just link through to the read-only AdminGroup detail. Data comes from
-// listAllGroups(), which the Worker gates on ADMIN_LOGINS (a non-admin gets a
-// 403 → thrown Error, surfaced here as an error banner rather than an empty
-// list).
+// Read-only operator view: every group and every user in the system. Reuses
+// the dashboard's group-row styling, but with no create / delete / leave
+// affordances — group rows just link through to the read-only AdminGroup
+// detail; user rows link out to the GitHub profile. Data comes from
+// listAllGroups() / listAllUsers(), which the Worker gates on ADMIN_LOGINS (a
+// non-admin gets a 403 → thrown Error, surfaced here as an error banner rather
+// than an empty list).
 import { useEffect, useState } from 'react'
-import { avatarUrl, listAllGroups, type AdminGroupSummary } from '@splitstupid/core'
+import {
+  avatarUrl,
+  listAllGroups,
+  listAllUsers,
+  type AdminGroupSummary,
+  type AdminUserSummary,
+} from '@splitstupid/core'
 
 function fmtDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -13,17 +20,25 @@ function fmtDate(ms: number): string {
 
 export default function Admin() {
   const [groups, setGroups] = useState<AdminGroupSummary[] | null>(null)
+  const [users, setUsers] = useState<AdminUserSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    // Two independent admin reads. They share the ADMIN_LOGINS gate, so in
+    // practice they fail or succeed together — but keep separate state so a
+    // hiccup on one doesn't blank the other, and let the first error win the
+    // banner.
+    const fail = (e: unknown, fallback: string) => {
+      if (cancelled) return
+      setError(prev => prev ?? ((e as Error)?.message || fallback))
+    }
     listAllGroups()
       .then(g => { if (!cancelled) setGroups(g) })
-      .catch(e => {
-        if (cancelled) return
-        setError((e as Error)?.message || 'Failed to load groups')
-        setGroups([])
-      })
+      .catch(e => { fail(e, 'Failed to load groups'); if (!cancelled) setGroups([]) })
+    listAllUsers()
+      .then(u => { if (!cancelled) setUsers(u) })
+      .catch(e => { fail(e, 'Failed to load users'); if (!cancelled) setUsers([]) })
     return () => { cancelled = true }
   }, [])
 
@@ -70,6 +85,42 @@ export default function Admin() {
                 </p>
               </div>
               <span className="group-link-chev">→</span>
+            </a>
+          </div>
+        ))}
+      </div>
+
+      <div className="card">
+        <div className="section-head">
+          <h2 className="section-title">All users</h2>
+          <span className="section-count">{users === null ? '—' : users.length}</span>
+        </div>
+        <p className="subtle muted" style={{ marginTop: 0, marginBottom: 16 }}>
+          Every GitHub login that owns, belongs to, or has posted in a group.
+        </p>
+        {users === null && <p className="empty">Loading…</p>}
+        {users && users.length === 0 && <p className="empty">No users.</p>}
+        {users && users.map(u => (
+          <div key={u.login} className="group-row">
+            <a
+              href={`https://github.com/${encodeURIComponent(u.login)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="group-link"
+            >
+              <div className="avatar-stack">
+                <img src={avatarUrl(u.login, 56)} alt={u.login} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <h3 className="group-name">{u.login}</h3>
+                <p className="group-meta">
+                  in {u.memberships} group{u.memberships === 1 ? '' : 's'}
+                  {' · '}owns {u.owned}
+                  {' · '}{u.expenseCount} expense{u.expenseCount === 1 ? '' : 's'}
+                  {u.lastActiveAt != null && <>{' · '}active {fmtDate(u.lastActiveAt)}</>}
+                </p>
+              </div>
+              <span className="group-link-chev">↗</span>
             </a>
           </div>
         ))}

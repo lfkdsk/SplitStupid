@@ -133,6 +133,14 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     return await listAllGroups(env)
   }
 
+  // Read-only admin roster: every distinct login in the system with light
+  // per-user stats. Same ADMIN_LOGINS gate as /admin/groups.
+  if (path === '/admin/users') {
+    if (method !== 'GET') return new Response('method not allowed', { status: 405 })
+    if (!isAdmin(me, env)) return json({ error: 'admin only' }, 403)
+    return await listAllUsers(env)
+  }
+
   // /groups/:id ...
   const groupMatch = path.match(/^\/groups\/([A-Za-z0-9]+)(?:\/(.*))?$/)
   if (groupMatch) {
@@ -344,6 +352,57 @@ async function listAllGroups(env: Env): Promise<Response> {
       finalizedAt: r.finalized_at ?? undefined,
     }
   }))
+}
+
+// GET /admin/users — every distinct login in the system, with light stats.
+// There's no users table: an identity is just a GH login that turns up as a
+// group owner, a member, and/or an event author. So the roster is the UNION
+// of those three columns, and each user's numbers are aggregates back over
+// them. Unlike listAllGroups (which fans out and merges arrays per group),
+// every user here is a flat row of scalars, so one query with correlated
+// sub-selects is the simpler shape. Caller is already admin-gated in route().
+//
+//   owned       — groups they own
+//   memberships — groups they currently belong to (owner is auto-added, so
+//                 this includes owned ones)
+//   expenses    — active (non-voided) expenses they recorded
+//   last_active — max ts of anything they authored; NULL if they joined but
+//                 never recorded an event
+interface AdminUserRow {
+  login: string
+  owned: number
+  memberships: number
+  expenses: number
+  last_active: number | null
+}
+
+async function listAllUsers(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `WITH logins AS (
+       SELECT login FROM members
+       UNION SELECT owner_login FROM groups
+       UNION SELECT author_login FROM events
+     )
+     SELECT
+       u.login AS login,
+       (SELECT COUNT(*) FROM groups g WHERE g.owner_login = u.login) AS owned,
+       (SELECT COUNT(*) FROM members m WHERE m.login = u.login) AS memberships,
+       (SELECT COUNT(*) FROM events e
+          WHERE e.author_login = u.login AND e.type = 'expense'
+            AND e.id NOT IN (SELECT json_extract(payload,'$.targetId')
+                             FROM events WHERE type = 'void')) AS expenses,
+       (SELECT MAX(ts) FROM events e WHERE e.author_login = u.login) AS last_active
+     FROM logins u
+     ORDER BY memberships DESC, login COLLATE NOCASE`,
+  ).all<AdminUserRow>()
+
+  return json((rows.results || []).map(r => ({
+    login: r.login,
+    owned: r.owned,
+    memberships: r.memberships,
+    expenseCount: r.expenses,
+    lastActiveAt: r.last_active ?? undefined,
+  })))
 }
 
 // GET /groups/:id/invite — public, no auth. Minimal preview so a
