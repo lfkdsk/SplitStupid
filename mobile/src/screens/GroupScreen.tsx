@@ -464,20 +464,7 @@ function AddExpense({
       />
       <View>
         <Text style={styles.splitLabel}>Date</Text>
-        <DateTimePicker
-          value={date}
-          mode="datetime"
-          display="compact"
-          maximumDate={new Date()}
-          themeVariant={isDark ? 'dark' : 'light'}
-          onChange={(_, d) => {
-            if (d) {
-              setDate(d)
-              setDateEdited(true)
-            }
-          }}
-          style={styles.datePicker}
-        />
+        <DateField value={date} onChange={d => { setDate(d); setDateEdited(true) }} />
       </View>
       <View>
         <Text style={styles.splitLabel}>Split equally among</Text>
@@ -575,15 +562,7 @@ function EditExpenseSheet({
           </View>
           <View>
             <Text style={styles.splitLabel}>Date</Text>
-            <DateTimePicker
-              value={date}
-              mode="datetime"
-              display="compact"
-              maximumDate={new Date()}
-              themeVariant={isDark ? 'dark' : 'light'}
-              onChange={(_, d) => { if (d) setDate(d) }}
-              style={styles.datePicker}
-            />
+            <DateField value={date} onChange={setDate} />
           </View>
           <View style={styles.editActions}>
             <Button title="Cancel" variant="secondary" onPress={onClose} style={{ flex: 1 }} />
@@ -592,6 +571,47 @@ function EditExpenseSheet({
         </View>
       </KeyboardAvoidingView>
     </Modal>
+  )
+}
+
+// "Jun 22, 2026 · 12:12 AM" — medium date + short time, in the app's dotted
+// meta style.
+function formatDateTime(d: Date): string {
+  const day = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${day} · ${time}`
+}
+
+// A bordered date field that reads like the text inputs above it — same width,
+// border, and height — showing the chosen instant as plain text and revealing
+// the wheel picker inline on tap. We render the value ourselves rather than use
+// the native compact picker, whose fixed intrinsic width can't be sized down to
+// line up with the other fields.
+function DateField({ value, onChange }: { value: Date; onChange: (d: Date) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <View>
+      <Pressable
+        style={styles.dateField}
+        onPress={() => setOpen(o => !o)}
+        accessibilityRole="button"
+        accessibilityLabel={`Date: ${formatDateTime(value)}`}
+      >
+        <Text style={styles.dateFieldText}>{formatDateTime(value)}</Text>
+        <Text style={styles.dateFieldCaret}>{open ? '▴' : '▾'}</Text>
+      </Pressable>
+      {open && (
+        <DateTimePicker
+          value={value}
+          mode="datetime"
+          display="spinner"
+          maximumDate={new Date()}
+          themeVariant={isDark ? 'dark' : 'light'}
+          onChange={(_, d) => { if (d) onChange(d) }}
+          style={styles.dateSpinner}
+        />
+      )}
+    </View>
   )
 }
 
@@ -715,11 +735,20 @@ const styles = StyleSheet.create({
   payerStrong: { fontWeight: '600' },
   amountInline: { flex: 1, height: 38, color: colors.fg, fontSize: 15, fontFamily: fonts.sans, padding: 0, textAlign: 'right' },
   splitLabel: { fontSize: 13, color: colors.fgMuted, marginBottom: 8, fontFamily: fonts.sans },
-  // The compact iOS picker sizes to its own intrinsic width; flex-start let
-  // its date+time pill spill past the card's right edge on narrow phones.
-  // Stretch pins it to the card's content width so it lays its pills out
-  // within bounds (right-aligned, the iOS-standard placement).
-  datePicker: { alignSelf: 'stretch' },
+  dateField: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    backgroundColor: colors.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateFieldText: { fontSize: 15, color: colors.fg, fontFamily: fonts.sans },
+  dateFieldCaret: { fontSize: 12, color: colors.fgSubtle },
+  dateSpinner: { alignSelf: 'stretch', marginTop: space(1) },
   checkPill: {
     flexDirection: 'row',
     alignItems: 'center',
