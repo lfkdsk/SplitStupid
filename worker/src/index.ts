@@ -616,19 +616,26 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
       payload.reason = body.reason.trim()
     }
   } else {
-    // type === 'edit' — amend an existing expense's amount / date in place.
-    // The original expense row stays put; settlement and the receipt fold the
-    // latest edit over it. Edit is the author's alone (matches the rule that
-    // you can only post an expense you paid — you correct your own spend).
+    // type === 'edit' — amend an existing expense's amount / date (and
+    // optionally note) in place. The original expense row stays put; settlement
+    // and the receipt fold the latest edit over it. Edit is the author's alone
+    // (matches the rule that you can only post an expense you paid — you correct
+    // your own spend).
     const targetId = body.targetId
     const amount = body.amount
     const date = body.date
+    const note = body.note
     if (typeof targetId !== 'string') return json({ error: 'targetId required' }, 400)
     if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
       return json({ error: 'amount must be a positive integer (minor units)' }, 400)
     }
     if (typeof date !== 'number' || !Number.isInteger(date) || date <= 0) {
       return json({ error: 'date must be a positive unix-ms integer' }, 400)
+    }
+    // Note is optional. Present (even empty) means "set the note to this" — an
+    // empty string clears it; omitting the field leaves the original note alone.
+    if (note !== undefined && typeof note !== 'string') {
+      return json({ error: 'note must be a string' }, 400)
     }
     const target = await env.DB.prepare(
       `SELECT type, author_login FROM events WHERE id = ? AND group_id = ?`,
@@ -646,6 +653,7 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     ).bind(id, targetId).first<{ 1: number }>()
     if (struck) return json({ error: 'cannot edit a voided expense' }, 409)
     payload = { targetId, amount, date }
+    if (typeof note === 'string') payload.note = note.trim()
   }
 
   const eventId = randomId(12)

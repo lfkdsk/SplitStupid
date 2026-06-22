@@ -41,6 +41,8 @@ const SHARE_ORIGIN = 'https://splitstupid.lfkdsk.org'
 export interface ExpenseView {
   effAmount: number
   effDateMs: number
+  /** Effective note after folding the latest edit (undefined ⇒ no note). */
+  effNote?: string
   isVoided: boolean
   edited: boolean
   canVoid: boolean
@@ -86,7 +88,7 @@ export interface UseGroup {
   join: () => Promise<void>
   addExpense: (input: AddExpenseInput) => Promise<boolean>
   voidExpense: (targetId: string) => Promise<void>
-  saveEdit: (targetId: string, input: { amountStr: string; dateMs: number }) => Promise<boolean>
+  saveEdit: (targetId: string, input: { amountStr: string; dateMs: number; note?: string }) => Promise<boolean>
   finalize: () => Promise<void>
   reopen: () => Promise<void>
   addFriend: (login: Member) => Promise<void>
@@ -164,6 +166,9 @@ export function useGroup(groupId: string, me: Member): UseGroup {
       return {
         effAmount: edit ? edit.amount : e.amount,
         effDateMs: edit ? edit.date : new Date(e.ts).getTime(),
+        // Mirror applyEdit's note fold: an edit carrying a note wins (empty ⇒
+        // cleared); a legacy edit without one leaves the original note.
+        effNote: edit && edit.note !== undefined ? edit.note || undefined : e.note,
         isVoided,
         edited: !!edit,
         // Owner can void anything; others only their own. Frozen when finalized.
@@ -256,7 +261,7 @@ export function useGroup(groupId: string, me: Member): UseGroup {
   )
 
   const saveEdit = useCallback(
-    async (targetId: string, input: { amountStr: string; dateMs: number }): Promise<boolean> => {
+    async (targetId: string, input: { amountStr: string; dateMs: number; note?: string }): Promise<boolean> => {
       if (!group) return false
       const amount = parseAmount(input.amountStr, group.currency)
       if (!Number.isFinite(amount) || amount <= 0) {
@@ -269,7 +274,14 @@ export function useGroup(groupId: string, me: Member): UseGroup {
       }
       let ok = false
       await run(async () => {
-        await postEvent(group.id, makeEdit({ targetId, amount, date: input.dateMs }))
+        // Pass note through only when the caller supplies it; an empty string
+        // clears the note, undefined leaves it as-is (see EditEvent.note).
+        await postEvent(group.id, makeEdit({
+          targetId,
+          amount,
+          date: input.dateMs,
+          note: input.note !== undefined ? input.note.trim() : undefined,
+        }))
         await refresh()
         ok = true
       })

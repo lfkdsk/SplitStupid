@@ -58,7 +58,9 @@ export const RECEIPT_HTML = `<!doctype html>
     return out;
   }
   function applyEdit(e, edit) {
-    return { ...e, amount: edit.amount, ts: new Date(edit.date).toISOString() };
+    const next = { ...e, amount: edit.amount, ts: new Date(edit.date).toISOString() };
+    if (edit.note !== void 0) next.note = edit.note || void 0;
+    return next;
   }
   function realCostByMember(expenses) {
     const cost = /* @__PURE__ */ new Map();

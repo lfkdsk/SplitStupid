@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { avatarUrl, formatAmount } from '@splitstupid/core'
+import { amountToInput, avatarUrl, formatAmount } from '@splitstupid/core'
 import type { ExpenseEvent } from '@splitstupid/core'
 import { useGroup } from '@splitstupid/hooks'
 import ConfirmModal from '../components/ConfirmModal'
@@ -41,6 +41,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [editTarget, setEditTarget] = useState<ExpenseEvent | null>(null)
   const [editAmountStr, setEditAmountStr] = useState('')
   const [editDateStr, setEditDateStr] = useState('')
+  const [editNote, setEditNote] = useState('')
 
   // Once the roster loads, seed the add-expense participants (don't clobber
   // an in-progress selection).
@@ -112,17 +113,18 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   // Seed the edit dialog from an expense's *effective* figures (post any prior
   // edit), so re-editing starts from what's on screen. Amount is minor units,
   // so convert back to the human-typed major form.
-  function openEdit(e: ExpenseEvent, effAmount: number, effDateMs: number) {
+  function openEdit(e: ExpenseEvent, effAmount: number, effDateMs: number, effNote?: string) {
     setEditTarget(e)
     setEditAmountStr(amountToInput(effAmount, group!.currency))
     setEditDateStr(toLocalInputValue(new Date(effDateMs)))
+    setEditNote(effNote ?? '')
     setError(null)
   }
 
   async function saveEdit() {
     if (!editTarget) return
     const dateMs = editDateStr ? new Date(editDateStr).getTime() : NaN
-    const ok = await saveEditApi(editTarget.id, { amountStr: editAmountStr, dateMs })
+    const ok = await saveEditApi(editTarget.id, { amountStr: editAmountStr, dateMs, note: editNote })
     if (ok) setEditTarget(null)
   }
 
@@ -493,13 +495,13 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           }
           // Effective figures (edit-folded) + the void/edit permission flags
           // all come from the shared hook — same logic the RN screen uses.
-          const { effAmount, effDateMs, isVoided, edited, canVoid, canEdit } = expenseView(e)
+          const { effAmount, effDateMs, effNote, isVoided, edited, canVoid, canEdit } = expenseView(e)
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
               <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
               <div className="event-body">
                 <p className="event-title">
-                  <strong>{e.payer}</strong> paid{e.note ? <> for <strong>{e.note}</strong></> : null}
+                  <strong>{e.payer}</strong> paid{effNote ? <> for <strong>{effNote}</strong></> : null}
                   {edited && !isVoided ? <span className="event-edited-tag">edited</span> : null}
                 </p>
                 <p className="event-meta">
@@ -512,7 +514,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                   {canEdit && (
                     <button
                       className="edit-ghost"
-                      onClick={() => openEdit(e, effAmount, effDateMs)}
+                      onClick={() => openEdit(e, effAmount, effDateMs, effNote)}
                       disabled={busy}
                     >
                       edit
@@ -638,10 +640,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
             <h3 id="edit-modal-title" className="modal-title">Edit expense</h3>
             <div className="modal-body">
               <p className="muted" style={{ marginTop: 0 }}>
-                Adjust the amount or date. Participants
-                {editTarget.note ? <> and the note (<strong>{editTarget.note}</strong>)</> : null}
-                {' '}stay the same — the entry is amended in place, with an
-                edit logged in the activity feed.
+                Adjust the amount, date, or note. Participants stay the same — the
+                entry is amended in place, with an edit logged in the activity feed.
               </p>
               <div style={{ marginBottom: 14 }}>
                 <span className="field-label">Amount ({group.currency})</span>
@@ -650,6 +650,14 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                   inputMode="decimal"
                   value={editAmountStr}
                   onChange={e => setEditAmountStr(e.target.value)}
+                />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <span className="field-label">Note</span>
+                <input
+                  placeholder="Note (optional, e.g. dinner at Sushi Aoki)"
+                  value={editNote}
+                  onChange={e => setEditNote(e.target.value)}
                 />
               </div>
               <div>
@@ -681,15 +689,6 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       )}
     </>
   )
-}
-
-// Inverse of parseAmount: take a stored minor-unit amount back to the
-// human-typed major form for pre-filling the edit field. Mirrors the
-// zero-decimal currency set used in settle.ts.
-function amountToInput(minor: number, currency: string): string {
-  const zeroDecimal = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
-  if (zeroDecimal.has(currency.toUpperCase())) return String(minor)
-  return (minor / 100).toFixed(2)
 }
 
 function fmtDate(iso: string): string {
