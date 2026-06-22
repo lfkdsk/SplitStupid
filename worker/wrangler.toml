@@ -14,6 +14,11 @@ database_name = "splitstupid"
 # Paste the database_id you got from `npx wrangler d1 create splitstupid`
 # here. The init shows it once on creation.
 database_id = "c716062a-f103-420b-9c23-c6921ad5360c"
+# `npm run db:migrate` (wrangler d1 migrations apply) reads these *.sql files
+# in order and tracks what's applied in a d1_migrations table — no more
+# hand-running each new file. Defaults shown explicitly for the next reader.
+migrations_dir = "migrations"
+migrations_table = "d1_migrations"
 
 [vars]
 # Origins allowed to talk to this Worker. Worker echoes the request's

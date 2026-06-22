@@ -86,19 +86,22 @@ npx wrangler login
 # into the [[d1_databases]] block in wrangler.toml.
 npx wrangler d1 create splitstupid
 
-# Apply the schema to the live (remote) D1.
-npm run db:init
-# Or for local dev SQLite:
-npm run db:init:local
-
-# Later migrations aren't bundled into db:init — apply them in order with a
-# one-off execute (drop --remote / add --local for the dev SQLite copy):
-npx wrangler d1 execute splitstupid --remote --file=migrations/0002_finalize.sql
-npx wrangler d1 execute splitstupid --remote --file=migrations/0003_edit.sql
+# Apply all pending migrations to the live (remote) D1. Wrangler applies the
+# migrations/*.sql files in order and records what's done in a d1_migrations
+# table, so this same command also ships every later schema change.
+npm run db:migrate
+# Or for the local dev SQLite copy:
+npm run db:migrate:local
 
 # Deploy.
 npm run deploy
 ```
+
+## Adding a migration
+
+Drop a new `NNNN_description.sql` into `migrations/` (next number in the
+sequence) and run `npm run db:migrate`. Wrangler applies only the files not yet
+recorded in `d1_migrations`, in order — nothing to hand-run, nothing to forget.
 
 In the Cloudflare dashboard, add a custom domain route:
 `api.splitstupid.lfkdsk.org/*` → this worker. DNS inside the
