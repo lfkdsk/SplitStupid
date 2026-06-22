@@ -38,6 +38,14 @@ identity via GitHub's `/user` endpoint.
 | POST   | `/groups/:id/members`      | `{login}`                          | Owner only. `login` must be a prior split-mate.  |
 | DELETE | `/groups/:id/members/:login` |                                  | Owner kicks, or member self-leaves.              |
 | POST   | `/groups/:id/events`       | `{type, ...}`                      | Member only. Voids: owner ∨ author. Edits: author only. |
+| GET    | `/admin/groups`            |                                    | **Admin only** (`ADMIN_LOGINS`). Every group; 403 otherwise. |
+
+`/admin/groups` is a read-only operator overview — every group in the system
+with its roster, active-expense count, and finalized state. It's gated on the
+`ADMIN_LOGINS` var (comma-separated GH logins, compared case-insensitively); a
+non-admin caller gets a 403. There's no admin *detail* endpoint: `GET
+/groups/:id` already returns full detail for any id regardless of membership,
+so the admin UI reuses it.
 
 Event payloads:
 ```jsonc

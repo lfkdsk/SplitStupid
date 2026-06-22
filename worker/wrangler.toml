@@ -19,3 +19,7 @@ database_id = "c716062a-f103-420b-9c23-c6921ad5360c"
 # Origins allowed to talk to this Worker. Worker echoes the request's
 # Origin if it matches one of these, otherwise CORS rejects.
 ALLOWED_ORIGINS = "https://splitstupid.lfkdsk.org,http://localhost:5180"
+# Comma-separated GH logins allowed on the read-only /admin/* routes. This is
+# the actual access boundary for admin reads; the frontend's VITE_ADMIN_LOGINS
+# only governs whether the Admin link shows. Compared case-insensitively.
+ADMIN_LOGINS = "lfkdsk"

@@ -8,7 +8,7 @@
 // it to a GH login server-side; the client never has to think about
 // scopes, gist permissions, or who can read what.
 
-import type { EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from './types'
+import type { AdminGroupSummary, EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, VoidEvent } from './types'
 
 let _baseUrl: string | undefined
 let _token: string | null = null
@@ -108,6 +108,12 @@ export const removeMember = (groupId: string, login: string): Promise<{ ok: true
 // candidate list for owner's "add a past split-mate" picker.
 export const listFriends = (): Promise<string[]> =>
   call<string[]>('/friends')
+
+// Read-only admin overview: every group in the system. The Worker gates this
+// on its ADMIN_LOGINS allowlist and returns 403 for anyone else — so a
+// non-admin caller gets a thrown Error, not a silent empty list.
+export const listAllGroups = (): Promise<AdminGroupSummary[]> =>
+  call<AdminGroupSummary[]>('/admin/groups')
 
 // Owner-only: directly add a past split-mate to the group. Worker gates
 // this on (owner ∧ login-is-a-prior-split-mate); see addMember there.
