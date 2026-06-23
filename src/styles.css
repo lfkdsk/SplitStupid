@@ -163,12 +163,20 @@ a:hover {
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   border-radius: var(--radius-full);
+  box-shadow: none;
   cursor: pointer;
   display: inline-flex;
   line-height: 0;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.user-avatar-btn:hover { border-color: var(--border-strong); }
+/* Scoped so it beats the global `button:hover:not(:disabled)` (which would
+   otherwise overlay an --accent fill, lift, and shadow on the avatar). */
+.user-menu .user-avatar-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  transform: none;
+  box-shadow: none;
+}
 .user-avatar-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-bg);
@@ -228,20 +236,39 @@ a:hover {
   white-space: nowrap;
 }
 
-.user-menu-item {
+/* Popover items are <button>s. Without enough specificity they inherit the
+   global primary-button look — solid --accent fill, centered text (inline-flex
+   + justify-content: center beats text-align), drop shadow, hover-lift — and
+   the "danger" item additionally picks up `button.danger`'s solid --negative
+   background, painting --negative text on a --negative fill so "Sign out"
+   vanishes. Scope + qualify with `button` so these reliably beat the global
+   button rules, including their `:hover:not(:disabled)` variants. */
+.user-menu-pop button.user-menu-item {
   width: 100%;
+  display: block;
   text-align: left;
   padding: 9px 10px;
   font-size: 14px;
+  font-weight: 500;
   color: var(--fg);
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
+  box-shadow: none;
   cursor: pointer;
 }
-.user-menu-item:hover { background: var(--bg-subtle); }
-.user-menu-item.danger { color: var(--negative); }
-.user-menu-item.danger:hover { background: var(--negative-bg); }
+.user-menu-pop button.user-menu-item:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  transform: none;
+  box-shadow: none;
+}
+.user-menu-pop button.user-menu-item.danger {
+  color: var(--negative);
+  background: transparent;
+}
+.user-menu-pop button.user-menu-item.danger:hover:not(:disabled) {
+  background: var(--negative-bg);
+}
 
 /* Cards */
 .card {
