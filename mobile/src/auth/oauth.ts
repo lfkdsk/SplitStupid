@@ -46,12 +46,14 @@ export async function signInWithGitHub(): Promise<OAuthResult> {
 
   // redirect_uri is the broker's /callback for the `-mobile` project key; the
   // broker maps that key to splitstupid://callback and 302s the token there.
-  // No scope requested — the backend only calls GitHub /user.
+  // user:email lets our backend read the verified primary email for account
+  // merging with Sign in with Apple.
   const authUrl =
     'https://github.com/login/oauth/authorize?' +
     new URLSearchParams({
       client_id: OAUTH_CLIENT_ID,
       redirect_uri: `${OAUTH_WORKER_URL.replace(/\/$/, '')}/callback`,
+      scope: 'user:email',
       state,
     }).toString()
 

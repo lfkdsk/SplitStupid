@@ -2,7 +2,20 @@
 // returns; we don't re-shape on the client. Settlement / balance rendering
 // stays pure-functional over these.
 
-export type Member = string // GitHub login
+export type Member = string // canonical SplitStupid account key
+
+export interface UserProfile {
+  key: Member
+  displayName: string
+  avatarUrl?: string
+  email?: string
+  provider?: 'github' | 'apple'
+  providerLogin?: string
+}
+
+export interface AuthMe extends UserProfile {
+  isAdmin?: boolean
+}
 
 export interface Group {
   id: string
@@ -10,6 +23,7 @@ export interface Group {
   currency: string
   owner: Member
   members: Member[]
+  profiles?: Record<Member, UserProfile>
   events: Event[]
   /** Unix ms (server-assigned). */
   createdAt: number
@@ -24,6 +38,7 @@ export interface InviteSummary {
   name: string
   currency: string
   owner: Member
+  profiles?: Record<Member, UserProfile>
   memberCount: number
   finalized: boolean
 }
@@ -37,6 +52,7 @@ export interface GroupSummary {
   /** Convenience flag set by the server: am I owner here, or just a member? */
   role: 'owner' | 'member'
   members: Member[]
+  profiles?: Record<Member, UserProfile>
   /** Active expense count (voided ones excluded). */
   eventCount: number
   createdAt: number
@@ -53,6 +69,7 @@ export interface AdminGroupSummary {
   currency: string
   owner: Member
   members: Member[]
+  profiles?: Record<Member, UserProfile>
   memberCount: number
   /** Active expense count (voided ones excluded). */
   eventCount: number
@@ -66,6 +83,7 @@ export interface AdminGroupSummary {
  *  those facts. */
 export interface AdminUserSummary {
   login: Member
+  profile?: UserProfile
   /** Groups this login owns. */
   owned: number
   /** Groups this login currently belongs to. Owners are auto-added as

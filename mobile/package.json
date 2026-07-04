@@ -18,6 +18,7 @@
     "@splitstupid/core": "*",
     "@splitstupid/hooks": "*",
     "expo": "^56.0.0",
+    "expo-apple-authentication": "~56.0.4",
     "expo-auth-session": "~56.0.14",
     "expo-constants": "~56.0.18",
     "expo-crypto": "~56.0.4",

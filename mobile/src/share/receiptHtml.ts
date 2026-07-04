@@ -62,6 +62,13 @@ export const RECEIPT_HTML = `<!doctype html>
     if (edit.note !== void 0) next.note = edit.note || void 0;
     return next;
   }
+  function sinceLastSettle(events) {
+    let cut = -1;
+    events.forEach((e, i) => {
+      if (e.type === "settle") cut = i;
+    });
+    return cut === -1 ? events : events.slice(cut + 1);
+  }
   function realCostByMember(expenses) {
     const cost = /* @__PURE__ */ new Map();
     const add = (m, v) => {
@@ -225,7 +232,7 @@ export const RECEIPT_HTML = `<!doctype html>
     blocks.push(spacer(20));
     blocks.push(sectionHeader("EXPENSES"));
     blocks.push(spacer(12));
-    const expenses = effectiveExpenses(group.events);
+    const expenses = effectiveExpenses(sinceLastSettle(group.events));
     let total = 0;
     if (expenses.length === 0) {
       blocks.push(emptyLine("\\u2014 no expenses recorded \\u2014"));

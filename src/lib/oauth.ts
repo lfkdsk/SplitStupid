@@ -26,10 +26,8 @@ function genState(): string {
   return s
 }
 
-// No scope: SplitStupid's backend (api.splitstupid.lfkdsk.org) only uses
-// the OAuth token to call GitHub /user once per request to resolve a
-// login. /user works with no-scope tokens. Smaller blast radius if a
-// token leaks vs. asking for `gist` / `repo` we don't actually need.
+// Scope: the backend needs user:email to read GitHub's verified primary
+// email and merge it with Sign in with Apple when the addresses match.
 export function startOAuthFlow(): void {
   if (!isOAuthConfigured()) {
     throw new Error('OAuth is not configured: set VITE_OAUTH_CLIENT_ID and VITE_OAUTH_WORKER_URL')
@@ -52,6 +50,7 @@ export function startOAuthFlow(): void {
   const params = new URLSearchParams({
     client_id: CLIENT_ID!,
     redirect_uri: `${WORKER_URL!.replace(/\/$/, '')}/callback`,
+    scope: 'user:email',
     state,
   })
   window.location.href = `https://github.com/login/oauth/authorize?${params.toString()}`
@@ -113,12 +112,21 @@ export function consumeOAuthCallback(): OAuthCallback | null {
 }
 
 const TOKEN_KEY = 'splitstupid_token'
+const SESSION_PREFIX = 'ss1:'
 
 export function loadToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
-export function saveToken(t: string): void {
-  localStorage.setItem(TOKEN_KEY, t)
+export function loadSessionToken(): string | null {
+  const token = loadToken()
+  if (!token?.startsWith(SESSION_PREFIX)) return null
+  return token.slice(SESSION_PREFIX.length)
+}
+export function isSessionToken(t: string): boolean {
+  return t.startsWith(SESSION_PREFIX)
+}
+export function saveSessionToken(t: string): void {
+  localStorage.setItem(TOKEN_KEY, SESSION_PREFIX + t)
 }
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY)

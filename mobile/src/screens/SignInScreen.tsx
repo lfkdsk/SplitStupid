@@ -1,4 +1,5 @@
 import { Text, View, StyleSheet } from 'react-native'
+import * as AppleAuthentication from 'expo-apple-authentication'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../auth/AuthContext'
 import { isOAuthConfigured } from '../auth/oauth'
@@ -8,7 +9,7 @@ import { colors, fonts, space } from '../theme'
 // The RN counterpart of the web's Setup page (sign-in half). The marketing
 // flourishes (sample receipt, feature cards) are deferred — see README.
 export default function SignInScreen() {
-  const { signIn, signingIn, error, clearError } = useAuth()
+  const { signIn, signInWithApple, signingIn, appleAvailable, error, clearError } = useAuth()
 
   return (
     <SafeAreaView style={styles.root}>
@@ -27,8 +28,21 @@ export default function SignInScreen() {
           </View>
         ) : null}
 
-        {isOAuthConfigured() ? (
-          <Button title="Sign in with GitHub" onPress={signIn} loading={signingIn} style={{ width: '100%' }} />
+        {appleAvailable || isOAuthConfigured() ? (
+          <View style={styles.actions}>
+            {appleAvailable ? (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={8}
+                style={styles.appleButton}
+                onPress={signInWithApple}
+              />
+            ) : null}
+            {isOAuthConfigured() ? (
+              <Button title="Sign in with GitHub" onPress={signIn} loading={signingIn} style={{ width: '100%' }} />
+            ) : null}
+          </View>
         ) : (
           <Text style={styles.notConfigured}>
             OAuth isn’t configured. Set oauthClientId / oauthWorkerUrl in app.json.
@@ -36,7 +50,7 @@ export default function SignInScreen() {
         )}
       </View>
 
-      <Text style={styles.footer}>Your friends already have GitHub. No new account.</Text>
+      <Text style={styles.footer}>Use Apple or GitHub. Matching verified emails share one account.</Text>
     </SafeAreaView>
   )
 }
@@ -56,5 +70,7 @@ const styles = StyleSheet.create({
   brand: { fontSize: 30, fontWeight: '600', color: colors.fg, fontFamily: fonts.display },
   tagline: { fontSize: 15, color: colors.fgMuted, textAlign: 'center', lineHeight: 22, fontFamily: fonts.sans },
   notConfigured: { fontSize: 13, color: colors.negative, textAlign: 'center', fontFamily: fonts.sans },
+  actions: { width: '100%', gap: space(2) },
+  appleButton: { width: '100%', height: 48 },
   footer: { fontSize: 12, color: colors.fgSubtle, textAlign: 'center', paddingBottom: space(4), fontFamily: fonts.sans },
 })

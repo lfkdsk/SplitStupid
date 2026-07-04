@@ -12,23 +12,35 @@ All commands below assume you've `cd worker/` first.
 ```
 splitstupid.lfkdsk.org (frontend)
         │
-        ▼ Authorization: Bearer <gh_oauth_token>
+        ▼ POST /auth/github or /auth/apple
 api.splitstupid.lfkdsk.org (this worker)
-        │  ├─ ─▶ GitHub /user (auth: token → login)
+        │  ├─ ─▶ GitHub /user + /user/emails
+        │  └─ ─▶ Apple JWKS token verification
+        │
+        ▼ Authorization: Bearer <splitstupid_session>
+api.splitstupid.lfkdsk.org (business routes)
         │
         ▼ SQL
-   D1: splitstupid (groups, members, events)
+   D1: splitstupid (accounts, identities, groups, members, events)
 ```
 
 ## Routes
 
-All except `/healthz` require `Authorization: Bearer <gh_oauth_token>`.
-Token can have any scope (or no scope) — we only use it to resolve
-identity via GitHub's `/user` endpoint.
+Business routes require `Authorization: Bearer <splitstupid_session>`.
+Clients receive that app session by exchanging a provider credential through
+`/auth/github` or `/auth/apple`; raw GitHub and Apple credentials are not used
+as long-lived business API tokens. For rollout safety, legacy clients that
+still send a raw GitHub OAuth token to business routes are accepted via
+GitHub `/user` only; those requests keep working but do not record email or
+participate in Apple email merging until the user signs in through
+`/auth/github`.
 
 | Method | Path                       | Body                               | Notes                                            |
 |--------|----------------------------|------------------------------------|--------------------------------------------------|
 | GET    | `/healthz`                 |                                    | No auth.                                         |
+| POST   | `/auth/github`             | `{token}`                          | Exchanges a GitHub OAuth token. Requires verified primary email. |
+| POST   | `/auth/apple`              | `{identityToken, fullName?}`       | Verifies the Apple identity token and returns an app session. |
+| GET    | `/me`                      |                                    | Current account profile and admin flag.          |
 | GET    | `/groups`                  |                                    | Owned ∪ joined for the auth'd user.              |
 | POST   | `/groups`                  | `{name, currency}`                 | Creator becomes owner + sole member.             |
 | GET    | `/friends`                 |                                    | Logins you've shared ≥1 group with.              |
@@ -43,16 +55,17 @@ identity via GitHub's `/user` endpoint.
 
 `/admin/groups` is a read-only operator overview — every group in the system
 with its roster, active-expense count, and finalized state. It's gated on the
-`ADMIN_LOGINS` var (comma-separated GH logins, compared case-insensitively); a
-non-admin caller gets a 403. There's no admin *detail* endpoint: `GET
+`ADMIN_LOGINS` var (comma-separated account keys, emails, or GitHub logins,
+compared case-insensitively); a non-admin caller gets a 403. There's no admin
+*detail* endpoint: `GET
 /groups/:id` already returns full detail for any id regardless of membership,
 so the admin UI reuses it.
 
 `/admin/users` is the matching user roster, same `ADMIN_LOGINS` gate. There's
-no users table — a "user" is just a GH login that appears as a group owner,
-member, and/or event author — so the endpoint returns the UNION of those
-logins with per-user aggregates: `{ login, owned, memberships, expenseCount,
-lastActiveAt? }`.
+an accounts table for provider identities, but legacy group data is still keyed
+by `login`/`account_key`, so the endpoint returns all active account keys with
+per-user aggregates: `{ login, owned, memberships, expenseCount, lastActiveAt?,
+profile? }`.
 
 Event payloads:
 ```jsonc
@@ -92,6 +105,9 @@ npx wrangler d1 create splitstupid
 npm run db:migrate
 # Or for the local dev SQLite copy:
 npm run db:migrate:local
+
+# Required before provider login can mint app sessions.
+npx wrangler secret put SESSION_SECRET
 
 # Deploy.
 npm run deploy
