@@ -111,6 +111,18 @@ export interface ExpenseEvent {
   participants: Member[]
   split: 'equal' | Record<Member, number>
   note?: string
+  /** Original currency the payer typed. Omitted for legacy/default-currency
+   *  expenses where `amount` is already the only amount that matters. */
+  originalCurrency?: string
+  /** Original amount in originalCurrency minor units. */
+  originalAmount?: number
+  /** Major-unit conversion rate: originalCurrency -> group.currency. */
+  exchangeRate?: number
+  exchangeRateSource?: 'frankfurter' | 'manual'
+  /** YYYY-MM-DD rate date used for the conversion. */
+  exchangeRateDate?: string
+  /** Unix ms when an automatic rate was fetched. */
+  exchangeRateFetchedAt?: number
 }
 
 export interface VoidEvent {
@@ -142,6 +154,14 @@ export interface EditEvent {
    *  clears it. When absent (legacy edits predating note-editing) the original
    *  note rides along untouched. */
   note?: string
+  /** Same FX metadata as ExpenseEvent, replacing the target expense's FX
+   *  metadata when present. Omitted on legacy/default-currency edits. */
+  originalCurrency?: string
+  originalAmount?: number
+  exchangeRate?: number
+  exchangeRateSource?: 'frankfurter' | 'manual'
+  exchangeRateDate?: string
+  exchangeRateFetchedAt?: number
 }
 
 /** A "clear the slate" checkpoint. Any member can stamp one to record that,
@@ -172,4 +192,14 @@ export interface Balance {
   member: Member
   /** Minor units. Positive = owed by group; negative = owes the group. */
   balance: number
+}
+
+export interface ExchangeRateQuote {
+  base: string
+  quote: string
+  rate: number
+  date: string
+  provider: 'frankfurter'
+  fetchedAt: number
+  cached: boolean
 }

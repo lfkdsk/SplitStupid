@@ -140,6 +140,11 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     return new Response('method not allowed', { status: 405 })
   }
 
+  if (path === '/rates') {
+    if (method === 'GET') return await readRate(env, url)
+    return new Response('method not allowed', { status: 405 })
+  }
+
   // Read-only admin surface. Gated on ADMIN_LOGINS — a non-admin gets a 403
   // (not a 404) so the route's existence isn't a secret; only its data is.
   if (path === '/admin/groups') {
@@ -764,6 +769,24 @@ interface EventRow {
   ts: number
 }
 
+interface RateRow {
+  base_currency: string
+  quote_currency: string
+  rate_date: string
+  provider: 'frankfurter'
+  rate: number
+  fetched_at: number
+}
+
+interface FxPayload {
+  originalCurrency?: string
+  originalAmount?: number
+  exchangeRate?: number
+  exchangeRateSource?: 'frankfurter' | 'manual'
+  exchangeRateDate?: string
+  exchangeRateFetchedAt?: number
+}
+
 // GET /groups — owned + joined, deduped (a user joining a group they
 // own is not actually possible since owner is auto-added, but the SQL
 // UNION naturally dedupes).
@@ -1070,6 +1093,76 @@ async function listFriends(env: Env, me: string): Promise<Response> {
   return json((rows.results || []).map(r => r.login))
 }
 
+// GET /rates?base=EUR&quote=USD&date=YYYY-MM-DD — authenticated exchange-rate
+// proxy. Rates are cached in D1 so clients never depend directly on a public
+// FX service, and repeated same-day/same-pair lookups stay local.
+async function readRate(env: Env, url: URL): Promise<Response> {
+  const base = normalizeCurrency(url.searchParams.get('base') || '')
+  const quote = normalizeCurrency(url.searchParams.get('quote') || '')
+  const date = url.searchParams.get('date') || todayUtc()
+
+  if (!isCurrencyCode(base)) return json({ error: 'base must be a 3-letter currency code' }, 400)
+  if (!isCurrencyCode(quote)) return json({ error: 'quote must be a 3-letter currency code' }, 400)
+  if (!isRateDate(date)) return json({ error: 'date must be YYYY-MM-DD' }, 400)
+
+  const now = Date.now()
+  if (base === quote) {
+    return json({ base, quote, rate: 1, date, provider: 'frankfurter', fetchedAt: now, cached: true })
+  }
+
+  const cached = await env.DB.prepare(
+    `SELECT base_currency, quote_currency, rate_date, provider, rate, fetched_at
+       FROM exchange_rates
+      WHERE base_currency = ? AND quote_currency = ? AND rate_date = ? AND provider = 'frankfurter'`,
+  ).bind(base, quote, date).first<RateRow>()
+  if (cached) {
+    return json({
+      base: cached.base_currency,
+      quote: cached.quote_currency,
+      rate: cached.rate,
+      date: cached.rate_date,
+      provider: cached.provider,
+      fetchedAt: cached.fetched_at,
+      cached: true,
+    })
+  }
+
+  let fresh: { base: string; quote: string; rate: number; date: string }
+  try {
+    fresh = await fetchFrankfurterRate(base, quote, date)
+  } catch (e) {
+    return json({ error: (e as Error)?.message || 'failed to fetch exchange rate' }, 502)
+  }
+  await env.DB.prepare(
+    `INSERT INTO exchange_rates (base_currency, quote_currency, rate_date, provider, rate, fetched_at)
+     VALUES (?, ?, ?, 'frankfurter', ?, ?)
+     ON CONFLICT(base_currency, quote_currency, rate_date, provider)
+     DO UPDATE SET rate = excluded.rate, fetched_at = excluded.fetched_at`,
+  ).bind(base, quote, fresh.date, fresh.rate, now).run()
+
+  return json({ ...fresh, provider: 'frankfurter', fetchedAt: now, cached: false })
+}
+
+async function fetchFrankfurterRate(base: string, quote: string, date: string): Promise<{ base: string; quote: string; rate: number; date: string }> {
+  const u = new URL(`https://api.frankfurter.dev/v2/rate/${base}/${quote}`)
+  u.searchParams.set('date', date)
+  let resp: Response
+  try {
+    resp = await fetch(u.toString(), { headers: { 'accept': 'application/json' } })
+  } catch (e: any) {
+    throw new Error('rate provider unreachable: ' + (e?.message || e))
+  }
+  const data = await resp.json().catch(() => null) as { rate?: number; date?: string; message?: string } | null
+  if (!resp.ok) {
+    return Promise.reject(new Error(data?.message || `rate provider returned HTTP ${resp.status}`))
+  }
+  const rate = data?.rate
+  if (!data || !Number.isFinite(rate) || rate == null || rate <= 0 || typeof data.date !== 'string') {
+    throw new Error('rate provider returned an invalid rate')
+  }
+  return { base, quote, rate, date: data.date }
+}
+
 // POST /groups/:id/members — owner-only roster changes. `{ login }` pulls in
 // a past split-mate account; `{ offlineName }` creates/restores a group-scoped
 // guest member that can participate in splits without signing in.
@@ -1263,8 +1356,8 @@ async function readRoster(env: Env, groupId: string): Promise<RosterInfo> {
 // a member of the group. Voids are gated on (owner OR original author).
 async function postEvent(env: Env, me: string, id: string, body: any): Promise<Response> {
   const group = await env.DB.prepare(
-    `SELECT owner_login, finalized_at FROM groups WHERE id = ?`,
-  ).bind(id).first<{ owner_login: string; finalized_at: number | null }>()
+    `SELECT owner_login, currency, finalized_at FROM groups WHERE id = ?`,
+  ).bind(id).first<{ owner_login: string; currency: string; finalized_at: number | null }>()
   if (!group) return json({ error: 'group not found' }, 404)
 
   if (group.finalized_at != null) {
@@ -1364,7 +1457,9 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     if (latestSettleTs != null && ts <= latestSettleTs) {
       return json({ error: 'cannot backdate an expense to before the last settle' }, 409)
     }
-    payload = { payer, amount, participants, split }
+    const fx = fxPayload(body, group.currency, amount)
+    if (fx instanceof Response) return fx
+    payload = { payer, amount, participants, split, ...fx }
     if (typeof note === 'string' && note.trim()) payload.note = note.trim()
   } else if (type === 'void') {
     const targetId = body.targetId
@@ -1424,7 +1519,9 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
          AND json_extract(payload,'$.targetId') = ? LIMIT 1`,
     ).bind(id, targetId).first<{ 1: number }>()
     if (struck) return json({ error: 'cannot edit a voided expense' }, 409)
-    payload = { targetId, amount, date }
+    const fx = fxPayload(body, group.currency, amount)
+    if (fx instanceof Response) return fx
+    payload = { targetId, amount, date, ...fx }
     if (typeof note === 'string') payload.note = note.trim()
   } else {
     // type === 'settle' — a clear-the-slate checkpoint. Any member may stamp
@@ -1486,6 +1583,84 @@ function stringField(v: unknown, name: string, min: number, max: number): string
 
 function isGuestMemberKey(key: string): boolean {
   return key.startsWith('guest:')
+}
+
+function normalizeCurrency(currency: string): string {
+  return currency.trim().toUpperCase()
+}
+
+function isCurrencyCode(currency: string): boolean {
+  return /^[A-Z]{3}$/.test(currency)
+}
+
+function isRateDate(date: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(`${date}T00:00:00.000Z`))
+}
+
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+const zeroDecimalCurrencies = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
+
+function fxPayload(body: any, groupCurrency: string, convertedAmount: number): FxPayload | Response {
+  const originalCurrencyRaw = body.originalCurrency
+  const originalAmount = body.originalAmount
+  const exchangeRate = body.exchangeRate
+  const exchangeRateSource = body.exchangeRateSource
+  const exchangeRateDate = body.exchangeRateDate
+  const exchangeRateFetchedAt = body.exchangeRateFetchedAt
+
+  if (originalCurrencyRaw === undefined) return {}
+  if (typeof originalCurrencyRaw !== 'string') return json({ error: 'originalCurrency must be a string' }, 400)
+  const originalCurrency = normalizeCurrency(originalCurrencyRaw)
+  const quoteCurrency = normalizeCurrency(groupCurrency)
+  if (!isCurrencyCode(quoteCurrency)) return json({ error: 'group currency must be a 3-letter currency code' }, 500)
+  if (!isCurrencyCode(originalCurrency)) return json({ error: 'originalCurrency must be a 3-letter currency code' }, 400)
+  if (!Number.isFinite(originalAmount) || originalAmount <= 0 || !Number.isInteger(originalAmount)) {
+    return json({ error: 'originalAmount must be a positive integer (minor units)' }, 400)
+  }
+  if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+    return json({ error: 'exchangeRate must be a positive number' }, 400)
+  }
+  if (originalCurrency === quoteCurrency && exchangeRate !== 1) {
+    return json({ error: 'exchangeRate must be 1 when originalCurrency matches the group currency' }, 400)
+  }
+  if (exchangeRateSource !== 'frankfurter' && exchangeRateSource !== 'manual') {
+    return json({ error: 'exchangeRateSource must be "frankfurter" or "manual"' }, 400)
+  }
+  if (typeof exchangeRateDate !== 'string' || !isRateDate(exchangeRateDate)) {
+    return json({ error: 'exchangeRateDate must be YYYY-MM-DD' }, 400)
+  }
+  if (exchangeRateSource === 'frankfurter') {
+    if (!Number.isFinite(exchangeRateFetchedAt) || !Number.isInteger(exchangeRateFetchedAt) || exchangeRateFetchedAt <= 0) {
+      return json({ error: 'exchangeRateFetchedAt must be a positive unix-ms integer' }, 400)
+    }
+  } else if (exchangeRateFetchedAt !== undefined) {
+    return json({ error: 'manual rates must not include exchangeRateFetchedAt' }, 400)
+  }
+  const expectedAmount = convertMinorAmount(originalAmount, originalCurrency, quoteCurrency, exchangeRate)
+  if (expectedAmount !== convertedAmount) {
+    return json({ error: 'amount does not match originalAmount × exchangeRate' }, 400)
+  }
+
+  return {
+    originalCurrency,
+    originalAmount,
+    exchangeRate,
+    exchangeRateSource,
+    exchangeRateDate,
+    ...(exchangeRateSource === 'frankfurter' ? { exchangeRateFetchedAt } : {}),
+  }
+}
+
+function convertMinorAmount(originalMinor: number, originalCurrency: string, targetCurrency: string, rate: number): number {
+  const original = normalizeCurrency(originalCurrency)
+  const target = normalizeCurrency(targetCurrency)
+  if (original === target) return originalMinor
+  const originalMajor = zeroDecimalCurrencies.has(original) ? originalMinor : originalMinor / 100
+  const targetMajor = originalMajor * rate
+  return zeroDecimalCurrencies.has(target) ? Math.round(targetMajor) : Math.round(targetMajor * 100)
 }
 
 function randomId(hexChars: number): string {

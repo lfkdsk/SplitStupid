@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { amountToInput, memberAvatarUrl, memberDisplayName, formatAmount } from '@splitstupid/core'
+import { CURRENCIES, amountToInput, memberAvatarUrl, memberDisplayName, formatAmount, normalizeCurrency } from '@splitstupid/core'
 import type { ExpenseEvent } from '@splitstupid/core'
 import { useGroup } from '@splitstupid/hooks'
 import ConfirmModal from '../components/ConfirmModal'
@@ -34,6 +34,9 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
 
   // Add-expense form. Payer is always the authenticated user (server enforces).
   const [amountStr, setAmountStr] = useState('')
+  const [expenseCurrency, setExpenseCurrency] = useState('')
+  const [manualRate, setManualRate] = useState(false)
+  const [manualRateStr, setManualRateStr] = useState('')
   const [note, setNote] = useState('')
   const [payer, setPayer] = useState(me)
   const [participants, setParticipants] = useState<string[]>([])
@@ -44,6 +47,9 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [voidTarget, setVoidTarget] = useState<ExpenseEvent | null>(null)
   const [editTarget, setEditTarget] = useState<ExpenseEvent | null>(null)
   const [editAmountStr, setEditAmountStr] = useState('')
+  const [editCurrency, setEditCurrency] = useState('')
+  const [editManualRate, setEditManualRate] = useState(false)
+  const [editManualRateStr, setEditManualRateStr] = useState('')
   const [editDateStr, setEditDateStr] = useState('')
   const [editNote, setEditNote] = useState('')
 
@@ -53,6 +59,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     if (!group) return
     setParticipants(prev => prev.length ? prev : group.members)
     setPayer(prev => (prev === me || group.members.includes(prev)) ? prev : me)
+    setExpenseCurrency(prev => prev || group.currency)
   }, [group, me])
 
   if (!group) {
@@ -118,9 +125,19 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   async function addExpense(e: React.FormEvent) {
     e.preventDefault()
     const dateMs = dateEdited ? (dateStr ? new Date(dateStr).getTime() : NaN) : undefined
-    const ok = await postExpense({ amountStr, note, payer, participants, dateMs })
+    const ok = await postExpense({
+      amountStr,
+      currency: expenseCurrency || group!.currency,
+      manualExchangeRate: manualRate ? Number(manualRateStr) : undefined,
+      note,
+      payer,
+      participants,
+      dateMs,
+    })
     if (ok) {
       setAmountStr('')
+      setManualRate(false)
+      setManualRateStr('')
       setNote('')
       setPayer(me)
       setDateStr(toLocalInputValue(new Date()))
@@ -136,9 +153,19 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   // Seed the edit dialog from an expense's *effective* figures (post any prior
   // edit), so re-editing starts from what's on screen. Amount is minor units,
   // so convert back to the human-typed major form.
-  function openEdit(e: ExpenseEvent, effAmount: number, effDateMs: number, effNote?: string) {
+  function openEdit(
+    e: ExpenseEvent,
+    effAmount: number,
+    effDateMs: number,
+    effNote: string | undefined,
+    fx: { originalCurrency?: string; originalAmount?: number; exchangeRate?: number; exchangeRateSource?: 'frankfurter' | 'manual' },
+  ) {
+    const originalCurrency = normalizeCurrency(fx.originalCurrency || group!.currency)
     setEditTarget(e)
-    setEditAmountStr(amountToInput(effAmount, group!.currency))
+    setEditCurrency(originalCurrency)
+    setEditAmountStr(amountToInput(fx.originalAmount ?? effAmount, originalCurrency))
+    setEditManualRate(fx.exchangeRateSource === 'manual' && originalCurrency !== normalizeCurrency(group!.currency))
+    setEditManualRateStr(fx.exchangeRate && originalCurrency !== normalizeCurrency(group!.currency) ? String(fx.exchangeRate) : '')
     setEditDateStr(toLocalInputValue(new Date(effDateMs)))
     setEditNote(effNote ?? '')
     setError(null)
@@ -147,7 +174,13 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   async function saveEdit() {
     if (!editTarget) return
     const dateMs = editDateStr ? new Date(editDateStr).getTime() : NaN
-    const ok = await saveEditApi(editTarget.id, { amountStr: editAmountStr, dateMs, note: editNote })
+    const ok = await saveEditApi(editTarget.id, {
+      amountStr: editAmountStr,
+      currency: editCurrency || group!.currency,
+      manualExchangeRate: editManualRate ? Number(editManualRateStr) : undefined,
+      dateMs,
+      note: editNote,
+    })
     if (ok) setEditTarget(null)
   }
 
@@ -402,11 +435,45 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               <input
                 className="amount"
                 inputMode="decimal"
-                placeholder={`Amount (${group.currency})`}
+                placeholder={`Amount (${expenseCurrency || group.currency})`}
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
               />
+              <select
+                className="currency-select"
+                value={expenseCurrency || group.currency}
+                onChange={e => {
+                  setExpenseCurrency(e.target.value)
+                  setManualRate(false)
+                  setManualRateStr('')
+                }}
+              >
+                {currencyOptions(group.currency).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
+            {normalizeCurrency(expenseCurrency || group.currency) !== normalizeCurrency(group.currency) && (
+              <div className="row fx-row">
+                <label className="check-pill fx-toggle">
+                  <input
+                    type="checkbox"
+                    checked={manualRate}
+                    onChange={e => setManualRate(e.target.checked)}
+                  />
+                  manual rate
+                </label>
+                {manualRate ? (
+                  <input
+                    className="amount fx-rate-input"
+                    inputMode="decimal"
+                    placeholder={`1 ${expenseCurrency} = ? ${group.currency}`}
+                    value={manualRateStr}
+                    onChange={e => setManualRateStr(e.target.value)}
+                  />
+                ) : (
+                  <span className="subtle muted">Rate fetched on save</span>
+                )}
+              </div>
+            )}
             <input
               placeholder="Note (optional, e.g. dinner at Sushi Aoki)"
               value={note}
@@ -567,13 +634,29 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                     {memberName(e.author)} · {fmtDate(e.ts)} · now {fmtDate(new Date(e.date).toISOString())}
                   </p>
                 </div>
-                <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
+                <span className="event-amount">{formatMoneyWithFx(e, group.currency)}</span>
               </div>
             )
           }
           // Effective figures (edit-folded) + the void/edit permission flags
           // all come from the shared hook — same logic the RN screen uses.
-          const { effAmount, effDateMs, effNote, isVoided, edited, isSettled, canVoid, canEdit } = expenseView(e)
+          const {
+            effAmount,
+            effDateMs,
+            effNote,
+            effOriginalCurrency,
+            effOriginalAmount,
+            effExchangeRate,
+            effExchangeRateSource,
+            isVoided,
+            edited,
+            isSettled,
+            canVoid,
+            canEdit,
+          } = expenseView(e)
+          const originalCurrency = normalizeCurrency(effOriginalCurrency || group.currency)
+          const originalAmount = effOriginalAmount ?? effAmount
+          const hasFx = originalCurrency !== normalizeCurrency(group.currency)
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''} ${isSettled ? 'settled' : ''}`}>
               <img src={memberAvatar(e.payer, 56)} alt="" className="event-avatar" />
@@ -587,13 +670,21 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                   split among {e.participants.map(memberName).join(', ')} · {fmtDate(new Date(effDateMs).toISOString())}
                 </p>
               </div>
-              <span className="event-amount">{formatAmount(effAmount, group.currency)}</span>
+              <span className="event-amount">
+                {hasFx ? formatAmount(originalAmount, originalCurrency) : formatAmount(effAmount, group.currency)}
+                {hasFx && <small>{formatAmount(effAmount, group.currency)}</small>}
+              </span>
               {(canEdit || canVoid) && (
                 <div className="event-actions">
                   {canEdit && (
                     <button
                       className="edit-ghost"
-                      onClick={() => openEdit(e, effAmount, effDateMs, effNote)}
+                      onClick={() => openEdit(e, effAmount, effDateMs, effNote, {
+                        originalCurrency,
+                        originalAmount,
+                        exchangeRate: effExchangeRate,
+                        exchangeRateSource: effExchangeRateSource,
+                      })}
                       disabled={busy}
                     >
                       edit
@@ -747,13 +838,49 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                 entry is amended in place, with an edit logged in the activity feed.
               </p>
               <div style={{ marginBottom: 14 }}>
-                <span className="field-label">Amount ({group.currency})</span>
-                <input
-                  className="amount"
-                  inputMode="decimal"
-                  value={editAmountStr}
-                  onChange={e => setEditAmountStr(e.target.value)}
-                />
+                <span className="field-label">Amount</span>
+                <div className="row">
+                  <input
+                    className="amount"
+                    inputMode="decimal"
+                    value={editAmountStr}
+                    onChange={e => setEditAmountStr(e.target.value)}
+                  />
+                  <select
+                    className="currency-select"
+                    value={editCurrency || group.currency}
+                    onChange={e => {
+                      setEditCurrency(e.target.value)
+                      setEditManualRate(false)
+                      setEditManualRateStr('')
+                    }}
+                  >
+                    {currencyOptions(group.currency).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                {normalizeCurrency(editCurrency || group.currency) !== normalizeCurrency(group.currency) && (
+                  <div className="row fx-row" style={{ marginTop: 8 }}>
+                    <label className="check-pill fx-toggle">
+                      <input
+                        type="checkbox"
+                        checked={editManualRate}
+                        onChange={e => setEditManualRate(e.target.checked)}
+                      />
+                      manual rate
+                    </label>
+                    {editManualRate ? (
+                      <input
+                        className="amount fx-rate-input"
+                        inputMode="decimal"
+                        placeholder={`1 ${editCurrency} = ? ${group.currency}`}
+                        value={editManualRateStr}
+                        onChange={e => setEditManualRateStr(e.target.value)}
+                      />
+                    ) : (
+                      <span className="subtle muted">Rate fetched on save</span>
+                    )}
+                  </div>
+                )}
               </div>
               <div style={{ marginBottom: 14 }}>
                 <span className="field-label">Note</span>
@@ -792,6 +919,22 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       )}
     </>
   )
+}
+
+function formatMoneyWithFx(e: {
+  amount: number
+  originalCurrency?: string
+  originalAmount?: number
+}, groupCurrency: string): string {
+  const originalCurrency = normalizeCurrency(e.originalCurrency || groupCurrency)
+  const originalAmount = e.originalAmount ?? e.amount
+  if (originalCurrency === normalizeCurrency(groupCurrency)) return formatAmount(e.amount, groupCurrency)
+  return `${formatAmount(originalAmount, originalCurrency)} (${formatAmount(e.amount, groupCurrency)})`
+}
+
+function currencyOptions(groupCurrency: string): string[] {
+  const group = normalizeCurrency(groupCurrency)
+  return Array.from(new Set([group, ...CURRENCIES]))
 }
 
 function fmtDate(iso: string): string {

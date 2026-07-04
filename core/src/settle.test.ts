@@ -10,6 +10,7 @@ import {
   realCostByMember,
   formatAmount,
   parseAmount,
+  convertMinorAmount,
 } from './settle'
 import type { EditEvent, Event, ExpenseEvent, Balance } from './types'
 
@@ -109,6 +110,27 @@ describe('computeBalances', () => {
     expect(bal).toEqual([
       { member: 'alice', balance: 1000 },
       { member: 'bob', balance: -1000 },
+    ])
+  })
+
+  it('settles multi-currency expenses with their converted group-currency amount', () => {
+    const events = [
+      expense({
+        id: 'e1',
+        payer: 'alice',
+        amount: 11000,
+        participants: ['alice', 'bob'],
+        originalCurrency: 'EUR',
+        originalAmount: 10000,
+        exchangeRate: 1.1,
+        exchangeRateSource: 'manual',
+        exchangeRateDate: '2026-07-04',
+      }),
+    ]
+    const bal = computeBalances(events, ['alice', 'bob'])
+    expect(bal).toEqual([
+      { member: 'alice', balance: 5500 },
+      { member: 'bob', balance: -5500 },
     ])
   })
 })
@@ -265,6 +287,34 @@ describe('applyEdit', () => {
     const folded = applyEdit(e, editEv('e1', 100, Date.parse('2024-06-15'), undefined, 'sushi'))
     expect(folded.note).toBe('sushi')
   })
+
+  it('folds edited FX metadata over the original expense', () => {
+    const e = expense({
+      id: 'e1',
+      payer: 'alice',
+      amount: 11000,
+      participants: ['alice', 'bob'],
+      originalCurrency: 'EUR',
+      originalAmount: 10000,
+      exchangeRate: 1.1,
+      exchangeRateSource: 'manual',
+      exchangeRateDate: '2026-07-04',
+    })
+    const edit = {
+      ...editEv('e1', 12345, Date.parse('2026-07-05')),
+      originalCurrency: 'GBP',
+      originalAmount: 9500,
+      exchangeRate: 1.2995,
+      exchangeRateSource: 'frankfurter' as const,
+      exchangeRateDate: '2026-07-05',
+      exchangeRateFetchedAt: 1_783_214_400_000,
+    }
+    const folded = applyEdit(e, edit)
+    expect(folded.amount).toBe(12345)
+    expect(folded.originalCurrency).toBe('GBP')
+    expect(folded.originalAmount).toBe(9500)
+    expect(folded.exchangeRateSource).toBe('frankfurter')
+  })
 })
 
 // ----- settle (min-cashflow) -------------------------------------------
@@ -358,5 +408,16 @@ describe('parseAmount', () => {
       const minor = parseAmount(input, cur)
       expect(formatAmount(minor, cur)).toBe(`${input.includes('.') ? Number(input).toFixed(2) : Number(input).toLocaleString()} ${cur}`)
     }
+  })
+})
+
+describe('convertMinorAmount', () => {
+  it('converts between two-decimal currencies using major-unit rates', () => {
+    expect(convertMinorAmount(10000, 'EUR', 'USD', 1.1)).toBe(11000)
+  })
+
+  it('converts zero-decimal currencies without adding phantom cents', () => {
+    expect(convertMinorAmount(1000, 'JPY', 'USD', 0.0067)).toBe(670)
+    expect(convertMinorAmount(1234, 'USD', 'JPY', 150)).toBe(1851)
   })
 })

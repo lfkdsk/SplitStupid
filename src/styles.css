@@ -474,6 +474,21 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
 .row > input, .row > select { flex: 1; min-width: 0; }
 .row .currency-select { flex: 0 0 110px; }
 
+.fx-row {
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fx-toggle {
+  flex: 0 0 auto;
+}
+
+.fx-rate-input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
 /* Field label */
 .field-label {
   display: block;
@@ -952,6 +967,15 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   color: var(--fg);
   font-size: 14px;
   white-space: nowrap;
+}
+
+.event-amount small {
+  display: block;
+  margin-top: 3px;
+  color: var(--fg-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
 }
 
 /* Action buttons (edit / void) sit under the amount, right-aligned, so they

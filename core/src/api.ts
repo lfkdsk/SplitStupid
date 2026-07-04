@@ -7,7 +7,7 @@
 // it as `Authorization: Bearer <token>` on every request. Provider credentials
 // (GitHub OAuth token / Apple identity token) are only exchanged at /auth/*.
 
-import type { AdminGroupSummary, AdminUserSummary, AuthMe, EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, SettleEvent, UserProfile, VoidEvent } from './types'
+import type { AdminGroupSummary, AdminUserSummary, AuthMe, EditEvent, ExchangeRateQuote, ExpenseEvent, Group, GroupSummary, InviteSummary, SettleEvent, UserProfile, VoidEvent } from './types'
 
 let _baseUrl: string | undefined
 let _token: string | null = null
@@ -124,6 +124,15 @@ export const removeMember = (groupId: string, login: string): Promise<{ ok: true
 // candidate list for owner's "add a past split-mate" picker.
 export const listFriends = (): Promise<string[]> =>
   call<string[]>('/friends')
+
+export const fetchExchangeRate = (input: { base: string; quote: string; date?: string }): Promise<ExchangeRateQuote> => {
+  const params = new URLSearchParams({
+    base: input.base.trim().toUpperCase(),
+    quote: input.quote.trim().toUpperCase(),
+  })
+  if (input.date) params.set('date', input.date)
+  return call<ExchangeRateQuote>(`/rates?${params.toString()}`)
+}
 
 // Read-only admin overview: every group in the system. The Worker gates this
 // on its ADMIN_LOGINS allowlist and returns 403 for anyone else — so a

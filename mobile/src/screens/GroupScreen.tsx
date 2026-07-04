@@ -16,7 +16,7 @@ import QRCode from 'react-native-qrcode-svg'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { amountToInput, effectiveExpenses, formatAmount, memberDisplayName, type ExpenseEvent, type Member, type SettleEvent, type UserProfile } from '@splitstupid/core'
+import { CURRENCIES, amountToInput, effectiveExpenses, expenseOriginalAmount, expenseOriginalCurrency, formatAmount, memberDisplayName, normalizeCurrency, type ExpenseEvent, type Member, type SettleEvent, type UserProfile } from '@splitstupid/core'
 import { useGroup, type AddExpenseInput } from '@splitstupid/hooks'
 import type { RootStackParamList } from '../navigation/types'
 import { useAuth } from '../auth/AuthContext'
@@ -103,7 +103,7 @@ export default function GroupScreen({ route, navigation }: Props) {
     )
   }
   function confirmVoid(e: ExpenseEvent) {
-    Alert.alert('Void expense', `Strike ${memberName(e.payer)}'s ${formatAmount(e.amount, group!.currency)}${e.note ? ` for "${e.note}"` : ''} from the ledger? It drops out of the settlement.`,
+    Alert.alert('Void expense', `Strike ${memberName(e.payer)}'s ${formatMoneyWithFx(e, group!.currency)}${e.note ? ` for "${e.note}"` : ''} from the ledger? It drops out of the settlement.`,
       [{ text: 'Keep it', style: 'cancel' }, { text: 'Void it', style: 'destructive', onPress: () => voidExpense(e.id) }])
   }
   function confirmRemoveMember(login: Member) {
@@ -393,11 +393,16 @@ export default function GroupScreen({ route, navigation }: Props) {
                 <Avatar login={e.payer} profile={profileOf(e.payer)} size={36} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.activityTitle}>
-                    {memberName(e.payer)} paid {formatAmount(ev.effAmount, group.currency)}
+                    {memberName(e.payer)} paid {formatMoneyWithFx({
+                      ...e,
+                      amount: ev.effAmount,
+                      originalCurrency: ev.effOriginalCurrency,
+                      originalAmount: ev.effOriginalAmount,
+                    }, group.currency)}
                     {ev.edited ? <Text style={styles.editedTag}>  edited</Text> : null}
                     {ev.isSettled ? <Text style={styles.editedTag}>  settled</Text> : null}
                   </Text>
-                  {e.note ? <Text style={styles.activityNote}>“{e.note}”</Text> : null}
+                  {ev.effNote ? <Text style={styles.activityNote}>“{ev.effNote}”</Text> : null}
                   <Text style={styles.activitySplit}>split among {e.participants.map(memberName).join(', ')}</Text>
                 </View>
                 {(ev.canEdit || ev.canVoid) && (
@@ -451,6 +456,9 @@ function AddExpense({
   onSubmit: (input: AddExpenseInput) => Promise<boolean>
 }) {
   const [amount, setAmount] = useState('')
+  const [entryCurrency, setEntryCurrency] = useState(currency)
+  const [manualRate, setManualRate] = useState(false)
+  const [manualRateStr, setManualRateStr] = useState('')
   const [note, setNote] = useState('')
   const [payer, setPayer] = useState(me)
   const [participants, setParticipants] = useState<Member[]>(roster)
@@ -466,16 +474,31 @@ function AddExpense({
     setPayer(prev => payerOptions.includes(prev) ? prev : me)
   }, [me, payerOptions])
 
+  useEffect(() => {
+    setEntryCurrency(currency)
+  }, [currency])
+
   function toggle(m: Member) {
     setParticipants(prev => (prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]))
   }
 
   async function submit() {
     setSubmitting(true)
-    const ok = await onSubmit({ amountStr: amount, note, payer, participants, dateMs: dateEdited ? date.getTime() : undefined })
+    const ok = await onSubmit({
+      amountStr: amount,
+      currency: entryCurrency,
+      manualExchangeRate: manualRate ? Number(manualRateStr) : undefined,
+      note,
+      payer,
+      participants,
+      dateMs: dateEdited ? date.getTime() : undefined,
+    })
     setSubmitting(false)
     if (ok) {
       setAmount('')
+      setEntryCurrency(currency)
+      setManualRate(false)
+      setManualRateStr('')
       setNote('')
       setPayer(me)
       setParticipants(roster)
@@ -507,7 +530,7 @@ function AddExpense({
         )}
         <Text style={styles.payerText}>paid</Text>
         <TextInput
-          placeholder={`Amount (${currency.toUpperCase()})`}
+          placeholder={`Amount (${entryCurrency.toUpperCase()})`}
           placeholderTextColor={colors.fgSubtle}
           keyboardType="decimal-pad"
           value={amount}
@@ -515,6 +538,34 @@ function AddExpense({
           style={styles.amountInline}
         />
       </View>
+      <CurrencyChips
+        value={entryCurrency}
+        groupCurrency={currency}
+        onChange={next => {
+          setEntryCurrency(next)
+          setManualRate(false)
+          setManualRateStr('')
+        }}
+      />
+      {normalizeCurrency(entryCurrency) !== normalizeCurrency(currency) ? (
+        <View style={{ gap: space(2) }}>
+          <Pressable style={[styles.checkPill, manualRate && styles.checkPillOn]} onPress={() => setManualRate(v => !v)}>
+            <Text style={[styles.checkPillText, manualRate && styles.checkPillTextOn]}>manual rate</Text>
+          </Pressable>
+          {manualRate ? (
+            <TextInput
+              placeholder={`1 ${entryCurrency} = ? ${currency.toUpperCase()}`}
+              placeholderTextColor={colors.fgSubtle}
+              keyboardType="decimal-pad"
+              value={manualRateStr}
+              onChangeText={setManualRateStr}
+              style={styles.input}
+            />
+          ) : (
+            <Text style={styles.qrHint}>Rate fetched on save.</Text>
+          )}
+        </View>
+      ) : null}
       <TextInput
         placeholder="Note (optional, e.g. dinner at Sushi Aoki)"
         placeholderTextColor={colors.fgSubtle}
@@ -560,16 +611,23 @@ function EditExpenseSheet({
   target: ExpenseEvent | null
   currency: string
   onClose: () => void
-  onSave: (targetId: string, input: { amountStr: string; dateMs: number; note: string }) => Promise<boolean>
+  onSave: (targetId: string, input: { amountStr: string; currency?: string; manualExchangeRate?: number; dateMs: number; note: string }) => Promise<boolean>
 }) {
   const [amount, setAmount] = useState('')
+  const [entryCurrency, setEntryCurrency] = useState(currency)
+  const [manualRate, setManualRate] = useState(false)
+  const [manualRateStr, setManualRateStr] = useState('')
   const [note, setNote] = useState('')
   const [date, setDate] = useState(new Date())
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!target) return
-    setAmount(amountToInput(target.amount, currency))
+    const originalCurrency = expenseOriginalCurrency(target, currency)
+    setEntryCurrency(originalCurrency)
+    setAmount(amountToInput(expenseOriginalAmount(target), originalCurrency))
+    setManualRate(target.exchangeRateSource === 'manual' && originalCurrency !== normalizeCurrency(currency))
+    setManualRateStr(target.exchangeRate && originalCurrency !== normalizeCurrency(currency) ? String(target.exchangeRate) : '')
     setNote(target.note ?? '')
     setDate(new Date(target.ts))
   }, [target, currency])
@@ -577,7 +635,13 @@ function EditExpenseSheet({
   async function save() {
     if (!target) return
     setSaving(true)
-    const ok = await onSave(target.id, { amountStr: amount, dateMs: date.getTime(), note })
+    const ok = await onSave(target.id, {
+      amountStr: amount,
+      currency: entryCurrency,
+      manualExchangeRate: manualRate ? Number(manualRateStr) : undefined,
+      dateMs: date.getTime(),
+      note,
+    })
     setSaving(false)
     if (ok) onClose()
   }
@@ -600,9 +664,9 @@ function EditExpenseSheet({
             is amended in place and flagged as edited.
           </Text>
           <View>
-            <Text style={styles.splitLabel}>Amount ({currency.toUpperCase()})</Text>
+            <Text style={styles.splitLabel}>Amount</Text>
             <TextInput
-              placeholder={`Amount (${currency.toUpperCase()})`}
+              placeholder={`Amount (${entryCurrency.toUpperCase()})`}
               placeholderTextColor={colors.fgSubtle}
               keyboardType="decimal-pad"
               value={amount}
@@ -610,6 +674,34 @@ function EditExpenseSheet({
               style={styles.input}
             />
           </View>
+          <CurrencyChips
+            value={entryCurrency}
+            groupCurrency={currency}
+            onChange={next => {
+              setEntryCurrency(next)
+              setManualRate(false)
+              setManualRateStr('')
+            }}
+          />
+          {normalizeCurrency(entryCurrency) !== normalizeCurrency(currency) ? (
+            <View style={{ gap: space(2) }}>
+              <Pressable style={[styles.checkPill, manualRate && styles.checkPillOn]} onPress={() => setManualRate(v => !v)}>
+                <Text style={[styles.checkPillText, manualRate && styles.checkPillTextOn]}>manual rate</Text>
+              </Pressable>
+              {manualRate ? (
+                <TextInput
+                  placeholder={`1 ${entryCurrency} = ? ${currency.toUpperCase()}`}
+                  placeholderTextColor={colors.fgSubtle}
+                  keyboardType="decimal-pad"
+                  value={manualRateStr}
+                  onChangeText={setManualRateStr}
+                  style={styles.input}
+                />
+              ) : (
+                <Text style={styles.qrHint}>Rate fetched on save.</Text>
+              )}
+            </View>
+          ) : null}
           <View>
             <Text style={styles.splitLabel}>Note</Text>
             <TextInput
@@ -640,6 +732,44 @@ function formatDateTime(d: Date): string {
   const day = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   return `${day} · ${time}`
+}
+
+function currencyOptions(groupCurrency: string): string[] {
+  const group = normalizeCurrency(groupCurrency)
+  return Array.from(new Set([group, ...CURRENCIES]))
+}
+
+function formatMoneyWithFx(e: Pick<ExpenseEvent, 'amount'> & Partial<ExpenseEvent>, groupCurrency: string): string {
+  const originalCurrency = expenseOriginalCurrency(e as ExpenseEvent, groupCurrency)
+  const originalAmount = expenseOriginalAmount(e as ExpenseEvent)
+  if (originalCurrency === normalizeCurrency(groupCurrency)) return formatAmount(e.amount, groupCurrency)
+  return `${formatAmount(originalAmount, originalCurrency)} (${formatAmount(e.amount, groupCurrency)})`
+}
+
+function CurrencyChips({
+  value,
+  groupCurrency,
+  onChange,
+}: {
+  value: string
+  groupCurrency: string
+  onChange: (currency: string) => void
+}) {
+  return (
+    <View>
+      <Text style={styles.splitLabel}>Currency</Text>
+      <View style={styles.chipRow}>
+        {currencyOptions(groupCurrency).map(c => {
+          const on = normalizeCurrency(value) === c
+          return (
+            <Pressable key={c} onPress={() => onChange(c)} style={[styles.checkPill, on && styles.checkPillOn]}>
+              <Text style={[styles.checkPillText, on && styles.checkPillTextOn]}>{c}</Text>
+            </Pressable>
+          )
+        })}
+      </View>
+    </View>
+  )
 }
 
 // A bordered date field that reads like the text inputs above it — same width,
