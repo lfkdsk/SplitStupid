@@ -40,7 +40,7 @@ export default function SignInScreen() {
               />
             ) : null}
             {isOAuthConfigured() ? (
-              <Button title="Sign in with GitHub" onPress={signIn} loading={signingIn} style={{ width: '100%' }} />
+              <Button title="Sign in with GitHub" onPress={signIn} loading={signingIn} style={styles.githubButton} />
             ) : null}
           </View>
         ) : (
@@ -71,6 +71,7 @@ const styles = StyleSheet.create({
   tagline: { fontSize: 15, color: colors.fgMuted, textAlign: 'center', lineHeight: 22, fontFamily: fonts.sans },
   notConfigured: { fontSize: 13, color: colors.negative, textAlign: 'center', fontFamily: fonts.sans },
   actions: { width: '100%', gap: space(2) },
-  appleButton: { width: '100%', height: 48 },
+  appleButton: { width: '100%', height: 44 },
+  githubButton: { width: '100%', height: 44 },
   footer: { fontSize: 12, color: colors.fgSubtle, textAlign: 'center', paddingBottom: space(4), fontFamily: fonts.sans },
 })
