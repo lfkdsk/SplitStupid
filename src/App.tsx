@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchMe, setApiToken } from '@splitstupid/core'
-import { clearToken, consumeOAuthCallback, loadToken, saveToken } from './lib/oauth'
+import { authWithGitHubToken, avatarUrl, getMe, setApiToken, type AuthMe } from '@splitstupid/core'
+import { clearToken, consumeOAuthCallback, isSessionToken, loadSessionToken, loadToken, saveSessionToken } from './lib/oauth'
 import { isAdmin } from './lib/admin'
 import Setup from './pages/Setup'
 import Invite from './pages/Invite'
@@ -34,33 +34,58 @@ export default function App() {
   const [booting, setBooting] = useState(true)
   const hash = useHashRoute()
 
-  // One-shot boot: consume an OAuth callback fragment if present, then
-  // fall back to a stashed token from localStorage. Validate by calling
-  // GitHub /user — if that succeeds, we know the token still works.
+  // One-shot boot: consume a GitHub OAuth callback if present, exchange raw
+  // provider tokens for app sessions, then validate with our own /me endpoint.
   useEffect(() => {
     let cancelled = false
     async function boot() {
       const cb = consumeOAuthCallback()
+      let sessionToken = loadSessionToken()
+      let rawGitHubToken: string | null = null
       if (cb) {
         if (!cb.ok) {
           setAuthError(cb.error)
           setBooting(false)
           return
         }
-        if (cb.token) saveToken(cb.token)
+        if (cb.token) rawGitHubToken = cb.token
+      } else {
+        const stored = loadToken()
+        if (stored && !isSessionToken(stored)) rawGitHubToken = stored
       }
-      const t = loadToken()
-      if (!t) { setBooting(false); return }
-      setApiToken(t)
+
       try {
-        const user = await fetchMe(t)
+        if (rawGitHubToken) {
+          const session = await authWithGitHubToken(rawGitHubToken)
+          sessionToken = session.token
+          saveSessionToken(session.token)
+          setApiToken(session.token)
+          if (!cancelled) {
+            setToken(session.token)
+            setMe(toMe(session.me))
+          }
+          return
+        }
+      } catch (e) {
+        clearToken()
+        setApiToken(null)
+        setAuthError((e as Error)?.message || 'GitHub sign-in failed.')
+        return
+      } finally {
+        if (rawGitHubToken && !cancelled) setBooting(false)
+      }
+
+      if (!sessionToken) { setBooting(false); return }
+      setApiToken(sessionToken)
+      try {
+        const user = await getMe()
         if (cancelled) return
-        setToken(t)
-        setMe({ login: user.login, avatar: user.avatar_url })
+        setToken(sessionToken)
+        setMe(toMe(user))
       } catch {
         clearToken()
         setApiToken(null)
-        setAuthError('Stored token rejected by GitHub. Sign in again.')
+        setAuthError('Stored session rejected. Sign in again.')
       } finally {
         if (!cancelled) setBooting(false)
       }
@@ -119,4 +144,8 @@ export default function App() {
             : <Groups me={me.login} />}
     </div>
   )
+}
+
+function toMe(user: AuthMe): Me {
+  return { login: user.key, avatar: user.avatarUrl || avatarUrl(user.key, 96) }
 }

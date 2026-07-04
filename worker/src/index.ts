@@ -5,13 +5,10 @@
 // quirks (secret-gist 404s for non-owners, comments-as-events glue, no
 // concurrent-write story) for what's fundamentally a tiny CRUD app.
 //
-// Auth model: clients send `Authorization: Bearer <gh_oauth_token>` on
-// every request. The Worker resolves the token to a GH login by calling
-// GitHub's /user endpoint once per request. We *do not* validate scope —
-// even a no-scope OAuth token can call /user. That means the only thing
-// the Worker trusts the token for is "this caller is the GH user with
-// login X." Everything downstream (membership, ownership) is checked
-// against the DB using that login.
+// Auth model: clients exchange provider credentials (GitHub OAuth token or
+// Apple identity token) for a SplitStupid app-session token at /auth/*.
+// Business routes trust only that app session. GitHub's verified primary
+// email and Apple's verified non-relay email are used to merge identities.
 //
 // Routing is hand-rolled (no router framework) since there are only 8
 // endpoints. URL.pathname + method.
@@ -19,7 +16,12 @@
 interface Env {
   DB: D1Database
   ALLOWED_ORIGINS: string
-  // Comma-separated GH logins allowed to hit the read-only /admin/* routes.
+  // HMAC secret for SplitStupid app-session tokens. Set with
+  // `wrangler secret put SESSION_SECRET` in production.
+  SESSION_SECRET: string
+  // Defaults to the iOS bundle id. Kept configurable for local tests.
+  APPLE_AUDIENCE?: string
+  // Comma-separated account keys, emails, or GH logins allowed to hit admin.
   // The real access boundary lives here on the server — the frontend only
   // uses its own copy to decide whether to show the Admin link.
   ADMIN_LOGINS: string
@@ -98,6 +100,13 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     })
   }
 
+  if (path === '/auth/github' && method === 'POST') {
+    return await authGitHub(env, await request.json())
+  }
+  if (path === '/auth/apple' && method === 'POST') {
+    return await authApple(env, await request.json())
+  }
+
   // Public invite preview, no auth — used by the share-link landing
   // page to render "<owner> invited you to join <group>" before the
   // visitor signs in. Only exposes name / owner / currency / member
@@ -107,9 +116,15 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
     return await readInvite(env, inviteMatch[1])
   }
 
-  // Everything else needs an authenticated GH login.
-  const me = await authenticate(request)
-  if (typeof me !== 'string') return me  // Response (401)
+  // Everything else needs an authenticated SplitStupid account.
+  const auth = await authenticate(request, env)
+  if (auth instanceof Response) return auth
+  const me = auth.accountKey
+
+  if (path === '/me') {
+    if (method === 'GET') return json(mePayload(auth, isAdmin(auth, env)))
+    return new Response('method not allowed', { status: 405 })
+  }
 
   // GET    /groups
   // POST   /groups
@@ -129,7 +144,7 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
   // (not a 404) so the route's existence isn't a secret; only its data is.
   if (path === '/admin/groups') {
     if (method !== 'GET') return new Response('method not allowed', { status: 405 })
-    if (!isAdmin(me, env)) return json({ error: 'admin only' }, 403)
+    if (!isAdmin(auth, env)) return json({ error: 'admin only' }, 403)
     return await listAllGroups(env)
   }
 
@@ -137,7 +152,7 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
   // per-user stats. Same ADMIN_LOGINS gate as /admin/groups.
   if (path === '/admin/users') {
     if (method !== 'GET') return new Response('method not allowed', { status: 405 })
-    if (!isAdmin(me, env)) return json({ error: 'admin only' }, 403)
+    if (!isAdmin(auth, env)) return json({ error: 'admin only' }, 403)
     return await listAllUsers(env)
   }
 
@@ -181,12 +196,66 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
 }
 
 // ---------------------------------------------------------------------------
-// Auth: resolve a Bearer GH token to a login.
-// Caching by token is omitted in v1 — at low traffic the extra GH /user
-// call per request is fine. If we hit GH rate limits we'll add a KV
-// cache keyed by SHA-256(token).
+// Auth
 
-async function authenticate(request: Request): Promise<string | Response> {
+interface AuthAccount {
+  accountKey: string
+  displayName: string
+  avatarUrl?: string
+  email?: string
+  provider?: 'github' | 'apple'
+  providerLogin?: string
+}
+
+interface GitHubIdentity {
+  provider: 'github'
+  providerUserId: string
+  login: string
+  email: string
+  displayName: string
+  avatarUrl?: string
+}
+
+interface GitHubUserIdentity {
+  provider: 'github'
+  providerUserId: string
+  login: string
+  displayName: string
+  avatarUrl?: string
+}
+
+interface AppleIdentity {
+  provider: 'apple'
+  providerUserId: string
+  email?: string
+  isPrivateRelay: boolean
+  displayName?: string
+}
+
+async function authGitHub(env: Env, body: any): Promise<Response> {
+  const rawToken = stringField(body?.token, 'token', 1, 5000)
+  if (typeof rawToken !== 'string') return rawToken
+  const identity = await resolveGitHubIdentity(rawToken)
+  if (identity instanceof Response) return identity
+  const account = await provisionGitHubAccount(env, identity)
+  const token = await signSession(env, account.accountKey)
+  return json({ token, me: mePayload(account, isAdmin(account, env)) })
+}
+
+async function authApple(env: Env, body: any): Promise<Response> {
+  const identityToken = stringField(body?.identityToken, 'identityToken', 1, 10000)
+  if (typeof identityToken !== 'string') return identityToken
+  const fullName = typeof body?.fullName === 'string' && body.fullName.trim()
+    ? body.fullName.trim()
+    : undefined
+  const identity = await verifyAppleIdentityToken(env, identityToken, fullName)
+  if (identity instanceof Response) return identity
+  const account = await provisionAppleAccount(env, identity)
+  const token = await signSession(env, account.accountKey)
+  return json({ token, me: mePayload(account, isAdmin(account, env)) })
+}
+
+async function authenticate(request: Request, env: Env): Promise<AuthAccount | Response> {
   const auth = request.headers.get('authorization') || ''
   if (!auth.startsWith('Bearer ')) {
     return new Response(JSON.stringify({ error: 'missing bearer token' }), {
@@ -200,9 +269,50 @@ async function authenticate(request: Request): Promise<string | Response> {
     })
   }
 
-  let resp: Response
+  const session = await verifySession(env, token)
+  if (!(session instanceof Response)) return session
+
+  // Compatibility path for old clients that still send a raw GitHub token
+  // directly to business routes. Old OAuth tokens may not have user:email, so
+  // keep them working by resolving only /user and defer email merge until the
+  // user signs in through /auth/github with the new scope.
+  const identity = await resolveGitHubUser(token)
+  if (identity instanceof Response) return session
+  return await provisionLegacyGitHubAccount(env, identity)
+}
+
+async function resolveGitHubIdentity(token: string): Promise<GitHubIdentity | Response> {
+  const user = await resolveGitHubUser(token)
+  if (user instanceof Response) return user
+
+  const emailResp = await fetch('https://api.github.com/user/emails', {
+    headers: {
+      'authorization': `Bearer ${token}`,
+      'accept': 'application/vnd.github+json',
+      'user-agent': 'splitstupid-data',
+    },
+  })
+  if (emailResp.status === 403 || emailResp.status === 404) {
+    return json({ error: 'GitHub email permission missing. Sign in again and grant email access.' }, 401)
+  }
+  if (!emailResp.ok) {
+    return json({ error: 'GitHub email lookup failed' }, 502)
+  }
+  const emails = await emailResp.json() as Array<{ email?: string; primary?: boolean; verified?: boolean }>
+  const primary = emails.find(e => e.primary && e.verified && e.email)
+  if (!primary?.email) {
+    return json({ error: 'GitHub account needs a verified primary email to sign in.' }, 403)
+  }
+  return {
+    ...user,
+    email: normalizeEmail(primary.email),
+  }
+}
+
+async function resolveGitHubUser(token: string): Promise<GitHubUserIdentity | Response> {
+  let userResp: Response
   try {
-    resp = await fetch('https://api.github.com/user', {
+    userResp = await fetch('https://api.github.com/user', {
       headers: {
         'authorization': `Bearer ${token}`,
         'accept': 'application/vnd.github+json',
@@ -215,18 +325,423 @@ async function authenticate(request: Request): Promise<string | Response> {
     })
   }
 
-  if (!resp.ok) {
+  if (!userResp.ok) {
     return new Response(JSON.stringify({ error: 'github rejected token' }), {
       status: 401, headers: { 'content-type': 'application/json' },
     })
   }
-  const data = await resp.json() as { login?: string }
-  if (!data.login) {
+  const user = await userResp.json() as { id?: number; login?: string; avatar_url?: string; name?: string | null }
+  if (!user.id || !user.login) {
     return new Response(JSON.stringify({ error: 'github returned no login' }), {
       status: 502, headers: { 'content-type': 'application/json' },
     })
   }
-  return data.login
+  return {
+    provider: 'github',
+    providerUserId: String(user.id),
+    login: user.login,
+    displayName: user.login,
+    avatarUrl: user.avatar_url,
+  }
+}
+
+async function provisionLegacyGitHubAccount(env: Env, identity: GitHubUserIdentity): Promise<AuthAccount> {
+  const accountKey = identity.login
+  await upsertAccount(env, {
+    accountKey,
+    displayName: identity.displayName,
+    avatarUrl: identity.avatarUrl,
+    provider: 'github',
+    providerLogin: identity.login,
+  })
+  await upsertIdentity(env, {
+    provider: 'github',
+    providerUserId: identity.providerUserId,
+    accountKey,
+    displayName: identity.displayName,
+    avatarUrl: identity.avatarUrl,
+    providerLogin: identity.login,
+  })
+  return {
+    accountKey,
+    displayName: identity.displayName,
+    avatarUrl: identity.avatarUrl,
+    provider: 'github',
+    providerLogin: identity.login,
+  }
+}
+
+async function provisionGitHubAccount(env: Env, identity: GitHubIdentity): Promise<AuthAccount> {
+  const existingByEmail = await accountByEmail(env, identity.email)
+  const accountKey = identity.login
+  if (existingByEmail && existingByEmail.accountKey !== accountKey) {
+    await upsertAccount(env, {
+      accountKey,
+      displayName: identity.displayName,
+      avatarUrl: identity.avatarUrl,
+      provider: 'github',
+      providerLogin: identity.login,
+    })
+    await mergeAccountKeys(env, existingByEmail.accountKey, accountKey)
+  }
+  await upsertAccount(env, {
+    accountKey,
+    email: identity.email,
+    displayName: identity.displayName,
+    avatarUrl: identity.avatarUrl,
+    provider: 'github',
+    providerLogin: identity.login,
+  })
+  await upsertIdentity(env, {
+    provider: 'github',
+    providerUserId: identity.providerUserId,
+    accountKey,
+    email: identity.email,
+    displayName: identity.displayName,
+    avatarUrl: identity.avatarUrl,
+    providerLogin: identity.login,
+  })
+  return {
+    accountKey,
+    email: identity.email,
+    displayName: identity.displayName,
+    avatarUrl: identity.avatarUrl,
+    provider: 'github',
+    providerLogin: identity.login,
+  }
+}
+
+async function provisionAppleAccount(env: Env, identity: AppleIdentity): Promise<AuthAccount> {
+  const emailForMerge = identity.email && !identity.isPrivateRelay ? identity.email : undefined
+  const existingByIdentity = await accountByIdentity(env, 'apple', identity.providerUserId)
+  const existingByEmail = emailForMerge ? await accountByEmail(env, emailForMerge) : null
+  const fallbackKey = `apple:${await shortHash(identity.providerUserId)}`
+  let accountKey = existingByIdentity?.accountKey || existingByEmail?.accountKey || fallbackKey
+
+  if (existingByIdentity && existingByEmail && existingByIdentity.accountKey !== existingByEmail.accountKey) {
+    await mergeAccountKeys(env, existingByIdentity.accountKey, existingByEmail.accountKey)
+    accountKey = existingByEmail.accountKey
+  }
+
+  const displayName = identity.displayName || existingByEmail?.displayName || existingByIdentity?.displayName || 'Apple User'
+  await upsertAccount(env, {
+    accountKey,
+    email: emailForMerge ?? existingByEmail?.email,
+    displayName,
+    avatarUrl: existingByEmail?.avatarUrl || existingByIdentity?.avatarUrl,
+    provider: existingByEmail?.provider || 'apple',
+    providerLogin: existingByEmail?.providerLogin,
+  })
+  await upsertIdentity(env, {
+    provider: 'apple',
+    providerUserId: identity.providerUserId,
+    accountKey,
+    email: identity.email,
+    displayName,
+  })
+  return {
+    accountKey,
+    email: emailForMerge ?? existingByEmail?.email,
+    displayName,
+    avatarUrl: existingByEmail?.avatarUrl || existingByIdentity?.avatarUrl,
+    provider: existingByEmail?.provider || 'apple',
+    providerLogin: existingByEmail?.providerLogin,
+  }
+}
+
+async function accountByEmail(env: Env, email: string): Promise<AuthAccount | null> {
+  const row = await env.DB.prepare(
+    `SELECT account_key, email, display_name, avatar_url, primary_provider, provider_login
+     FROM accounts WHERE email = ? LIMIT 1`,
+  ).bind(normalizeEmail(email)).first<AccountRow>()
+  return row ? accountFromRow(row) : null
+}
+
+async function accountByIdentity(env: Env, provider: string, providerUserId: string): Promise<AuthAccount | null> {
+  const row = await env.DB.prepare(
+    `SELECT a.account_key, a.email, a.display_name, a.avatar_url, a.primary_provider, a.provider_login
+     FROM identities i JOIN accounts a ON a.account_key = i.account_key
+     WHERE i.provider = ? AND i.provider_user_id = ? LIMIT 1`,
+  ).bind(provider, providerUserId).first<AccountRow>()
+  return row ? accountFromRow(row) : null
+}
+
+async function upsertAccount(env: Env, account: AuthAccount): Promise<void> {
+  const now = Date.now()
+  await env.DB.prepare(
+    `INSERT INTO accounts (account_key, email, display_name, avatar_url, primary_provider, provider_login, created_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+     ON CONFLICT(account_key) DO UPDATE SET
+       email = COALESCE(excluded.email, accounts.email),
+       display_name = excluded.display_name,
+       avatar_url = COALESCE(excluded.avatar_url, accounts.avatar_url),
+       primary_provider = COALESCE(excluded.primary_provider, accounts.primary_provider),
+       provider_login = COALESCE(excluded.provider_login, accounts.provider_login),
+       updated_at = excluded.updated_at`,
+  ).bind(
+    account.accountKey,
+    account.email ? normalizeEmail(account.email) : null,
+    account.displayName,
+    account.avatarUrl ?? null,
+    account.provider ?? null,
+    account.providerLogin ?? null,
+    now,
+  ).run()
+}
+
+async function upsertIdentity(env: Env, input: {
+  provider: 'github' | 'apple'
+  providerUserId: string
+  accountKey: string
+  email?: string
+  displayName?: string
+  avatarUrl?: string
+  providerLogin?: string
+}): Promise<void> {
+  const now = Date.now()
+  await env.DB.prepare(
+    `INSERT INTO identities (provider, provider_user_id, account_key, email, display_name, avatar_url, provider_login, created_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+     ON CONFLICT(provider, provider_user_id) DO UPDATE SET
+       account_key = excluded.account_key,
+       email = excluded.email,
+       display_name = excluded.display_name,
+       avatar_url = excluded.avatar_url,
+       provider_login = excluded.provider_login,
+       updated_at = excluded.updated_at`,
+  ).bind(
+    input.provider,
+    input.providerUserId,
+    input.accountKey,
+    input.email ? normalizeEmail(input.email) : null,
+    input.displayName ?? null,
+    input.avatarUrl ?? null,
+    input.providerLogin ?? null,
+    now,
+  ).run()
+}
+
+interface AccountRow {
+  account_key: string
+  email: string | null
+  display_name: string | null
+  avatar_url: string | null
+  primary_provider: string | null
+  provider_login: string | null
+}
+
+function accountFromRow(row: AccountRow): AuthAccount {
+  return {
+    accountKey: row.account_key,
+    email: row.email ?? undefined,
+    displayName: row.display_name || row.provider_login || row.account_key,
+    avatarUrl: row.avatar_url ?? undefined,
+    provider: row.primary_provider === 'github' || row.primary_provider === 'apple' ? row.primary_provider : undefined,
+    providerLogin: row.provider_login ?? undefined,
+  }
+}
+
+function mePayload(account: AuthAccount, isAdminUser?: boolean) {
+  return {
+    key: account.accountKey,
+    login: account.accountKey,
+    displayName: account.displayName,
+    avatarUrl: account.avatarUrl,
+    avatar: account.avatarUrl,
+    email: account.email,
+    provider: account.provider,
+    providerLogin: account.providerLogin,
+    isAdmin: isAdminUser || undefined,
+  }
+}
+
+async function signSession(env: Env, accountKey: string): Promise<string> {
+  if (!env.SESSION_SECRET) throw new Error('SESSION_SECRET is not configured')
+  const header = base64UrlEncodeJson({ alg: 'HS256', typ: 'JWT' })
+  const payload = base64UrlEncodeJson({
+    sub: accountKey,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
+  })
+  const data = `${header}.${payload}`
+  const sig = await hmacSha256(env.SESSION_SECRET, data)
+  return `${data}.${base64UrlEncode(sig)}`
+}
+
+async function verifySession(env: Env, token: string): Promise<AuthAccount | Response> {
+  if (!env.SESSION_SECRET) {
+    return json({ error: 'SESSION_SECRET is not configured' }, 500)
+  }
+  const clean = token.startsWith('ss1:') ? token.slice('ss1:'.length) : token
+  const parts = clean.split('.')
+  if (parts.length !== 3) return json({ error: 'invalid session token' }, 401)
+  const [header, payload, sig] = parts
+  const expected = base64UrlEncode(await hmacSha256(env.SESSION_SECRET, `${header}.${payload}`))
+  if (!constantTimeEqual(sig, expected)) return json({ error: 'invalid session token' }, 401)
+
+  let body: { sub?: string; exp?: number }
+  try {
+    body = JSON.parse(utf8Decode(base64UrlDecode(payload)))
+  } catch {
+    return json({ error: 'invalid session token' }, 401)
+  }
+  if (!body.sub || !body.exp || body.exp < Math.floor(Date.now() / 1000)) {
+    return json({ error: 'session expired' }, 401)
+  }
+
+  const row = await env.DB.prepare(
+    `SELECT account_key, email, display_name, avatar_url, primary_provider, provider_login
+     FROM accounts WHERE account_key = ? LIMIT 1`,
+  ).bind(body.sub).first<AccountRow>()
+  if (row) return accountFromRow(row)
+
+  // Legacy sessions are not expected, but this keeps an account-key-only token
+  // useful if the account row was lost before profiles were backfilled.
+  return { accountKey: body.sub, displayName: body.sub }
+}
+
+async function hmacSha256(secret: string, data: string): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    utf8Encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, utf8Encode(data)))
+}
+
+async function verifyAppleIdentityToken(env: Env, token: string, fullName?: string): Promise<AppleIdentity | Response> {
+  const parts = token.split('.')
+  if (parts.length !== 3) return json({ error: 'invalid Apple identity token' }, 401)
+  let header: { kid?: string; alg?: string }
+  let claims: {
+    iss?: string
+    aud?: string
+    exp?: number
+    sub?: string
+    email?: string
+    email_verified?: string | boolean
+    is_private_email?: string | boolean
+  }
+  try {
+    header = JSON.parse(utf8Decode(base64UrlDecode(parts[0])))
+    claims = JSON.parse(utf8Decode(base64UrlDecode(parts[1])))
+  } catch {
+    return json({ error: 'invalid Apple identity token' }, 401)
+  }
+
+  if (header.alg !== 'RS256' || !header.kid) return json({ error: 'invalid Apple token header' }, 401)
+  if (claims.iss !== 'https://appleid.apple.com') return json({ error: 'invalid Apple token issuer' }, 401)
+  const expectedAudience = env.APPLE_AUDIENCE || 'org.lfkdsk.splitstupid'
+  if (claims.aud !== expectedAudience) return json({ error: 'invalid Apple token audience' }, 401)
+  if (!claims.exp || claims.exp < Math.floor(Date.now() / 1000)) return json({ error: 'Apple token expired' }, 401)
+  if (!claims.sub) return json({ error: 'Apple token missing subject' }, 401)
+
+  const key = await fetchAppleJwk(header.kid)
+  if (key instanceof Response) return key
+  const cryptoKey = await crypto.subtle.importKey(
+    'jwk',
+    key as unknown as JsonWebKey,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  )
+  const ok = await crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    base64UrlDecode(parts[2]),
+    utf8Encode(`${parts[0]}.${parts[1]}`),
+  )
+  if (!ok) return json({ error: 'Apple token signature invalid' }, 401)
+
+  const verified = claims.email_verified === true || claims.email_verified === 'true'
+  const email = verified && claims.email ? normalizeEmail(claims.email) : undefined
+  const isPrivateRelay = !!email && (
+    email.endsWith('@privaterelay.appleid.com') ||
+    claims.is_private_email === true ||
+    claims.is_private_email === 'true'
+  )
+  return {
+    provider: 'apple',
+    providerUserId: claims.sub,
+    email,
+    isPrivateRelay,
+    displayName: fullName,
+  }
+}
+
+async function fetchAppleJwk(kid: string): Promise<Record<string, unknown> | Response> {
+  const resp = await fetch('https://appleid.apple.com/auth/keys')
+  if (!resp.ok) return json({ error: 'Apple public keys unavailable' }, 502)
+  const data = await resp.json() as { keys?: Array<Record<string, unknown> & { kid?: string }> }
+  const key = data.keys?.find(k => k.kid === kid)
+  if (!key) return json({ error: 'Apple public key not found' }, 401)
+  return key
+}
+
+async function mergeAccountKeys(env: Env, fromKey: string, toKey: string): Promise<void> {
+  if (fromKey === toKey) return
+
+  const memberRows = await env.DB.prepare(
+    `SELECT group_id, joined_at FROM members WHERE login = ?`,
+  ).bind(fromKey).all<{ group_id: string; joined_at: number }>()
+  for (const row of memberRows.results || []) {
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO members (group_id, login, joined_at) VALUES (?, ?, ?)`,
+    ).bind(row.group_id, toKey, row.joined_at).run()
+  }
+  await env.DB.prepare(`DELETE FROM members WHERE login = ?`).bind(fromKey).run()
+  await env.DB.prepare(`UPDATE groups SET owner_login = ? WHERE owner_login = ?`).bind(toKey, fromKey).run()
+  await env.DB.prepare(`UPDATE events SET author_login = ? WHERE author_login = ?`).bind(toKey, fromKey).run()
+  await rewriteEventPayloadMember(env, fromKey, toKey)
+  await env.DB.prepare(`UPDATE identities SET account_key = ? WHERE account_key = ?`).bind(toKey, fromKey).run()
+  await env.DB.prepare(`DELETE FROM accounts WHERE account_key = ?`).bind(fromKey).run()
+}
+
+async function rewriteEventPayloadMember(env: Env, fromKey: string, toKey: string): Promise<void> {
+  const rows = await env.DB.prepare(
+    `SELECT id, payload FROM events WHERE payload LIKE ?`,
+  ).bind(`%${fromKey}%`).all<{ id: string; payload: string }>()
+
+  for (const row of rows.results || []) {
+    let payload: any
+    try { payload = JSON.parse(row.payload) } catch { continue }
+    const next = replaceMemberInPayload(payload, fromKey, toKey)
+    if (next.changed) {
+      await env.DB.prepare(`UPDATE events SET payload = ? WHERE id = ?`)
+        .bind(JSON.stringify(next.payload), row.id)
+        .run()
+    }
+  }
+}
+
+function replaceMemberInPayload(payload: any, fromKey: string, toKey: string): { payload: any; changed: boolean } {
+  let changed = false
+  const next = { ...payload }
+  if (next.payer === fromKey) {
+    next.payer = toKey
+    changed = true
+  }
+  if (Array.isArray(next.participants)) {
+    const participants = Array.from(new Set(next.participants.map((p: unknown) => p === fromKey ? toKey : p)))
+    if (JSON.stringify(participants) !== JSON.stringify(next.participants)) {
+      next.participants = participants
+      changed = true
+    }
+  }
+  if (next.split && typeof next.split === 'object' && !Array.isArray(next.split)) {
+    const split: Record<string, number> = {}
+    for (const [k, v] of Object.entries(next.split)) {
+      const key = k === fromKey ? toKey : k
+      split[key] = (split[key] || 0) + Number(v)
+    }
+    if (JSON.stringify(split) !== JSON.stringify(next.split)) {
+      next.split = split
+      changed = true
+    }
+  }
+  return { payload: next, changed }
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +759,7 @@ interface GroupRow {
 interface EventRow {
   id: string
   group_id: string
-  type: 'expense' | 'void' | 'edit'
+  type: 'expense' | 'void' | 'edit' | 'settle'
   payload: string
   author_login: string
   ts: number
@@ -289,6 +804,10 @@ async function listGroups(env: Env, me: string): Promise<Response> {
   }
   const countsByGroup = new Map<string, number>()
   for (const c of eventCounts.results || []) countsByGroup.set(c.group_id, c.n)
+  const profileKeys = new Set<string>()
+  for (const r of rows.results || []) profileKeys.add(r.owner_login)
+  for (const m of memberRows.results || []) profileKeys.add(m.login)
+  const allProfiles = await profilesFor(env, Array.from(profileKeys))
 
   return json((rows.results || []).map(r => ({
     id: r.id,
@@ -297,6 +816,7 @@ async function listGroups(env: Env, me: string): Promise<Response> {
     owner: r.owner_login,
     role: r.role,
     members: membersByGroup.get(r.id) || [r.owner_login],
+    profiles: pickProfiles(allProfiles, [r.owner_login, ...(membersByGroup.get(r.id) || [])]),
     eventCount: countsByGroup.get(r.id) || 0,
     createdAt: r.created_at,
     finalizedAt: r.finalized_at ?? undefined,
@@ -337,6 +857,10 @@ async function listAllGroups(env: Env): Promise<Response> {
   }
   const countsByGroup = new Map<string, number>()
   for (const c of eventCounts.results || []) countsByGroup.set(c.group_id, c.n)
+  const profileKeys = new Set<string>()
+  for (const r of rows.results || []) profileKeys.add(r.owner_login)
+  for (const m of memberRows.results || []) profileKeys.add(m.login)
+  const allProfiles = await profilesFor(env, Array.from(profileKeys))
 
   return json((rows.results || []).map(r => {
     const members = membersByGroup.get(r.id) || [r.owner_login]
@@ -346,6 +870,7 @@ async function listAllGroups(env: Env): Promise<Response> {
       currency: r.currency,
       owner: r.owner_login,
       members,
+      profiles: pickProfiles(allProfiles, [r.owner_login, ...members]),
       memberCount: members.length,
       eventCount: countsByGroup.get(r.id) || 0,
       createdAt: r.created_at,
@@ -396,8 +921,10 @@ async function listAllUsers(env: Env): Promise<Response> {
      ORDER BY memberships DESC, login COLLATE NOCASE`,
   ).all<AdminUserRow>()
 
+  const profiles = await profilesFor(env, (rows.results || []).map(r => r.login))
   return json((rows.results || []).map(r => ({
     login: r.login,
+    profile: profiles[r.login],
     owned: r.owned,
     memberships: r.memberships,
     expenseCount: r.expenses,
@@ -423,6 +950,7 @@ async function readInvite(env: Env, id: string): Promise<Response> {
     name: group.name,
     currency: group.currency,
     owner: group.owner_login,
+    profiles: await profilesFor(env, [group.owner_login]),
     memberCount: row?.n ?? 1,
     finalized: group.finalized_at != null,
   })
@@ -452,6 +980,11 @@ async function readGroup(env: Env, me: string, id: string): Promise<Response> {
     author: e.author_login,
     ...JSON.parse(e.payload),
   }))
+  const profileKeys = new Set<string>([group.owner_login, ...memberLogins])
+  for (const e of eventsHydrated) {
+    profileKeys.add(e.author)
+    for (const m of membersFromEventPayload(e)) profileKeys.add(m)
+  }
 
   // We don't gate read access here — anyone with the URL (and any
   // signed-in GH user) can read. Matches the share-by-link UX. If
@@ -464,6 +997,7 @@ async function readGroup(env: Env, me: string, id: string): Promise<Response> {
     currency: group.currency,
     owner: group.owner_login,
     members: memberLogins,
+    profiles: await profilesFor(env, Array.from(profileKeys)),
     events: eventsHydrated,
     createdAt: group.created_at,
     finalizedAt: group.finalized_at ?? undefined,
@@ -492,7 +1026,7 @@ async function createGroup(env: Env, me: string, body: any): Promise<Response> {
   ])
 
   return json({
-    id, name, currency, owner: me, members: [me], events: [], createdAt: now,
+    id, name, currency, owner: me, members: [me], profiles: await profilesFor(env, [me]), events: [], createdAt: now,
   }, 201)
 }
 
@@ -830,16 +1364,19 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
 // ---------------------------------------------------------------------------
 // Helpers
 
-// Is this login allowed on the /admin/* routes? ADMIN_LOGINS is a
-// comma-separated allowlist. Compared case-insensitively since GitHub logins
-// are case-insensitive (the /user login we resolved is canonical-cased, but
-// the configured list might not be).
-function isAdmin(me: string, env: Env): boolean {
+// Is this account allowed on the /admin/* routes? ADMIN_LOGINS accepts account
+// keys, emails, or GitHub logins. Compared case-insensitively.
+function isAdmin(me: AuthAccount, env: Env): boolean {
   const admins = (env.ADMIN_LOGINS || '')
     .split(',')
     .map(s => s.trim().toLowerCase())
     .filter(Boolean)
-  return admins.includes(me.toLowerCase())
+  return [
+    me.accountKey,
+    me.email,
+    me.providerLogin,
+    me.displayName,
+  ].filter(Boolean).some(v => admins.includes(String(v).toLowerCase()))
 }
 
 function stringField(v: unknown, name: string, min: number, max: number): string | Response {
@@ -855,4 +1392,92 @@ function randomId(hexChars: number): string {
   const bytes = new Uint8Array(Math.ceil(hexChars / 2))
   crypto.getRandomValues(bytes)
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').slice(0, hexChars)
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase()
+}
+
+async function shortHash(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', utf8Encode(value))
+  return Array.from(new Uint8Array(digest).slice(0, 12), b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function utf8Encode(s: string): Uint8Array {
+  return new TextEncoder().encode(s)
+}
+
+function utf8Decode(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes)
+}
+
+function base64UrlEncodeJson(value: unknown): string {
+  return base64UrlEncode(utf8Encode(JSON.stringify(value)))
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = ''
+  bytes.forEach(b => { binary += String.fromCharCode(b) })
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function base64UrlDecode(s: string): Uint8Array {
+  const padded = s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)
+  const binary = atob(padded)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+  return out
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let out = 0
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return out === 0
+}
+
+async function profilesFor(env: Env, keys: string[]): Promise<Record<string, unknown>> {
+  const uniq = Array.from(new Set(keys.filter(Boolean)))
+  if (uniq.length === 0) return {}
+  const placeholders = uniq.map(() => '?').join(',')
+  const rows = await env.DB.prepare(
+    `SELECT account_key, email, display_name, avatar_url, primary_provider, provider_login
+     FROM accounts WHERE account_key IN (${placeholders})`,
+  ).bind(...uniq).all<AccountRow>()
+  const out: Record<string, unknown> = {}
+  for (const key of uniq) {
+    out[key] = { key, displayName: key }
+  }
+  for (const row of rows.results || []) {
+    const account = accountFromRow(row)
+    out[account.accountKey] = {
+      key: account.accountKey,
+      displayName: account.displayName,
+      avatarUrl: account.avatarUrl,
+      email: account.email,
+      provider: account.provider,
+      providerLogin: account.providerLogin,
+    }
+  }
+  return out
+}
+
+function pickProfiles(all: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const key of Array.from(new Set(keys.filter(Boolean)))) {
+    if (all[key]) out[key] = all[key]
+  }
+  return out
+}
+
+function membersFromEventPayload(e: any): string[] {
+  const out = new Set<string>()
+  if (typeof e.payer === 'string') out.add(e.payer)
+  if (Array.isArray(e.participants)) {
+    for (const p of e.participants) if (typeof p === 'string') out.add(p)
+  }
+  if (e.split && typeof e.split === 'object' && !Array.isArray(e.split)) {
+    for (const key of Object.keys(e.split)) out.add(key)
+  }
+  return Array.from(out)
 }

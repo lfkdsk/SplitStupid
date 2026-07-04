@@ -3,12 +3,11 @@
 // this module stays platform-agnostic (the web app reads it from
 // import.meta.env, the RN app from its Expo config — core doesn't care).
 //
-// Auth: stash the GH OAuth token via setApiToken(); we forward it as
-// `Authorization: Bearer <token>` on every request. The Worker resolves
-// it to a GH login server-side; the client never has to think about
-// scopes, gist permissions, or who can read what.
+// Auth: stash the SplitStupid app-session token via setApiToken(); we forward
+// it as `Authorization: Bearer <token>` on every request. Provider credentials
+// (GitHub OAuth token / Apple identity token) are only exchanged at /auth/*.
 
-import type { AdminGroupSummary, AdminUserSummary, EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, SettleEvent, VoidEvent } from './types'
+import type { AdminGroupSummary, AdminUserSummary, AuthMe, EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, SettleEvent, VoidEvent } from './types'
 
 let _baseUrl: string | undefined
 let _token: string | null = null
@@ -51,6 +50,23 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return text ? JSON.parse(text) as T : (undefined as unknown as T)
 }
+
+export interface AuthSession {
+  token: string
+  me: AuthMe
+}
+
+export const authWithGitHubToken = (token: string): Promise<AuthSession> =>
+  call<AuthSession>('/auth/github', { method: 'POST', body: JSON.stringify({ token }) })
+
+export const authWithAppleIdentityToken = (input: {
+  identityToken: string
+  fullName?: string | null
+}): Promise<AuthSession> =>
+  call<AuthSession>('/auth/apple', { method: 'POST', body: JSON.stringify(input) })
+
+export const getMe = (): Promise<AuthMe> =>
+  call<AuthMe>('/me')
 
 // ---------------------------------------------------------------------------
 // Groups

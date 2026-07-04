@@ -28,3 +28,7 @@ ALLOWED_ORIGINS = "https://splitstupid.lfkdsk.org,http://localhost:5180"
 # the actual access boundary for admin reads; the frontend's VITE_ADMIN_LOGINS
 # only governs whether the Admin link shows. Compared case-insensitively.
 ADMIN_LOGINS = "lfkdsk"
+# Expected `aud` claim for Sign in with Apple identity tokens. Production
+# session signing uses a secret, not a committed var:
+#   npx wrangler secret put SESSION_SECRET
+APPLE_AUDIENCE = "org.lfkdsk.splitstupid"

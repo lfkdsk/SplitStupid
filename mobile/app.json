@@ -2,7 +2,7 @@
   "expo": {
     "name": "SplitStupid",
     "slug": "splitstupid",
-    "version": "0.0.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "splitstupid",
@@ -13,10 +13,15 @@
     },
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "bundleIdentifier": "org.lfkdsk.splitstupid",
+      "buildNumber": "2",
       "associatedDomains": [
         "applinks:splitstupid.lfkdsk.org"
-      ]
+      ],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "org.lfkdsk.splitstupid",
@@ -39,9 +44,15 @@
       ]
     },
     "plugins": [
+      "expo-apple-authentication",
       "expo-secure-store",
       "expo-web-browser",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "71061add-6fea-47fe-b3b5-d95a4e70e642"
+      }
+    }
   }
 }
