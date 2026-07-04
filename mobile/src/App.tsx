@@ -15,6 +15,7 @@ import GroupsScreen from './screens/GroupsScreen'
 import GroupScreen from './screens/GroupScreen'
 import InviteScreen from './screens/InviteScreen'
 import SettingsScreen from './screens/SettingsScreen'
+import ScanInviteScreen from './screens/ScanInviteScreen'
 import { HeaderAvatar } from './components/HeaderAvatar'
 
 // Wire @splitstupid/core's API client to the Worker before anything renders.
@@ -33,6 +34,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       Groups: '',
       SignIn: 'signin',
       Group: 'g/:groupId',
+      ScanInvite: 'scan',
       Settings: 'settings',
       Invite: 'g/:groupId',
     },
@@ -83,6 +85,7 @@ function RootNavigator() {
         <>
           <Stack.Screen name="Groups" component={GroupsScreen} options={{ title: 'SplitStupid', headerRight: () => <HeaderAvatar /> }} />
           <Stack.Screen name="Group" component={GroupScreen} options={{ title: '', headerRight: () => <HeaderAvatar /> }} />
+          <Stack.Screen name="ScanInvite" component={ScanInviteScreen} options={{ title: 'Scan invite' }} />
           <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
           <Stack.Screen name="Invite" component={InviteScreen} options={{ title: 'Invite' }} />
         </>

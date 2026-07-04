@@ -5,6 +5,7 @@ export type RootStackParamList = {
   SignIn: undefined
   Groups: undefined
   Group: { groupId: string }
+  ScanInvite: undefined
   Settings: undefined
   Invite: { groupId: string }
 }
