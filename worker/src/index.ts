@@ -595,9 +595,7 @@ async function verifySession(env: Env, token: string): Promise<AuthAccount | Res
   ).bind(body.sub).first<AccountRow>()
   if (row) return accountFromRow(row)
 
-  // Legacy sessions are not expected, but this keeps an account-key-only token
-  // useful if the account row was lost before profiles were backfilled.
-  return { accountKey: body.sub, displayName: body.sub }
+  return json({ error: 'session account no longer exists' }, 401)
 }
 
 async function hmacSha256(secret: string, data: string): Promise<Uint8Array> {
@@ -921,7 +919,7 @@ async function listAllUsers(env: Env): Promise<Response> {
      ORDER BY memberships DESC, login COLLATE NOCASE`,
   ).all<AdminUserRow>()
 
-  const profiles = await profilesFor(env, (rows.results || []).map(r => r.login))
+  const profiles = await profilesFor(env, (rows.results || []).map(r => r.login), { includeEmail: true })
   return json((rows.results || []).map(r => ({
     login: r.login,
     profile: profiles[r.login],
@@ -1436,7 +1434,11 @@ function constantTimeEqual(a: string, b: string): boolean {
   return out === 0
 }
 
-async function profilesFor(env: Env, keys: string[]): Promise<Record<string, unknown>> {
+async function profilesFor(
+  env: Env,
+  keys: string[],
+  options: { includeEmail?: boolean } = {},
+): Promise<Record<string, unknown>> {
   const uniq = Array.from(new Set(keys.filter(Boolean)))
   if (uniq.length === 0) return {}
   const placeholders = uniq.map(() => '?').join(',')
@@ -1450,14 +1452,15 @@ async function profilesFor(env: Env, keys: string[]): Promise<Record<string, unk
   }
   for (const row of rows.results || []) {
     const account = accountFromRow(row)
-    out[account.accountKey] = {
+    const profile: Record<string, unknown> = {
       key: account.accountKey,
       displayName: account.displayName,
       avatarUrl: account.avatarUrl,
-      email: account.email,
       provider: account.provider,
       providerLogin: account.providerLogin,
     }
+    if (options.includeEmail) profile.email = account.email
+    out[account.accountKey] = profile
   }
   return out
 }
