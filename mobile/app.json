@@ -47,6 +47,12 @@
       "expo-apple-authentication",
       "expo-secure-store",
       "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SplitStupid to scan invite QR codes."
+        }
+      ],
       "@react-native-community/datetimepicker"
     ],
     "extra": {

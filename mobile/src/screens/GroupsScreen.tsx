@@ -89,7 +89,15 @@ export default function GroupsScreen({ navigation }: { navigation: NavigationPro
               </View>
             </Card>
           ) : (
-            <Button title="+  New group" onPress={() => setCreating(true)} variant="secondary" />
+            <View style={styles.actions}>
+              <Button title="+  New group" onPress={() => setCreating(true)} variant="secondary" style={{ flex: 1 }} />
+              <Button
+                title="Scan invite"
+                onPress={() => navigation.navigate('ScanInvite')}
+                variant="secondary"
+                style={{ flex: 1 }}
+              />
+            </View>
           )}
         </View>
       }
@@ -125,6 +133,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { padding: space(4), gap: space(3) },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  actions: { flexDirection: 'row', gap: space(2) },
   groupLink: {
     flexDirection: 'row',
     alignItems: 'center',
