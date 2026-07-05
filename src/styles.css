@@ -1678,11 +1678,24 @@ button.landing-cta {
   font-size: 11px;
   color: #fff8f1;
   flex-shrink: 0;
-  border: 1px solid rgba(26, 20, 16, 0.10);
+  border: 0;
   line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
 }
-@media (prefers-color-scheme: dark) {
-  .landing-monogram { border-color: rgba(244, 237, 225, 0.15); }
+
+.landing-sample .balance-row + .balance-row {
+  margin-top: 8px;
+}
+
+.landing-sample .balance-name,
+.landing-sample .transfer-name {
+  gap: 10px;
+}
+
+.landing-sample .transfer {
+  gap: 12px;
+  padding: 13px 16px;
 }
 
 /* Two keepsakes — receipt + postcard canvas previews. The stage gives
