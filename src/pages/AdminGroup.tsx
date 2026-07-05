@@ -4,7 +4,7 @@
 // only the read-only sections: no add-expense form, no void / edit / finalize
 // / member buttons. An admin is typically not a member, so even if a stray
 // action were wired up the Worker would reject it; we just don't surface any.
-import { avatarUrl, formatAmount } from '@splitstupid/core'
+import { formatAmount, memberAvatarUrl, memberDisplayName } from '@splitstupid/core'
 import { useGroup } from '@splitstupid/hooks'
 
 function fmtDate(iso: string): string {
@@ -13,6 +13,8 @@ function fmtDate(iso: string): string {
 
 export default function AdminGroup({ groupId, me }: { groupId: string; me: string }) {
   const { group, error, setError, balances, transfers, maxBalance, expenseView } = useGroup(groupId, me)
+  const memberName = (m: string) => memberDisplayName(m, group?.profiles)
+  const memberAvatar = (m: string, size: number) => memberAvatarUrl(m, group?.profiles, size)
 
   return (
     <>
@@ -45,7 +47,7 @@ export default function AdminGroup({ groupId, me }: { groupId: string; me: strin
             <div className="group-header-meta">
               <span>{group.currency}</span>
               <span className="dot" />
-              <span>owner <strong>{group.owner}</strong></span>
+              <span>owner <strong>{memberName(group.owner)}</strong></span>
               <span className="dot" />
               <span>{group.members.length} member{group.members.length === 1 ? '' : 's'}</span>
               <span className="dot" />
@@ -54,8 +56,8 @@ export default function AdminGroup({ groupId, me }: { groupId: string; me: strin
             <div className="chip-row" style={{ marginBottom: 4 }}>
               {group.members.map(m => (
                 <span key={m} className="member-chip">
-                  <img src={avatarUrl(m, 36)} alt="" />
-                  {m}
+                  <img src={memberAvatar(m, 36)} alt="" />
+                  {memberName(m)}
                 </span>
               ))}
             </div>
@@ -78,8 +80,8 @@ export default function AdminGroup({ groupId, me }: { groupId: string; me: strin
                     return (
                       <div key={b.member} className="balance-row">
                         <span className="balance-name">
-                          <img src={avatarUrl(b.member, 36)} alt="" />
-                          <span className="login">{b.member}</span>
+                          <img src={memberAvatar(b.member, 36)} alt="" />
+                          <span className="login">{memberName(b.member)}</span>
                         </span>
                         <div className="balance-bar">
                           <span className="balance-bar-mid" />
@@ -100,13 +102,13 @@ export default function AdminGroup({ groupId, me }: { groupId: string; me: strin
                     {transfers.map((t, i) => (
                       <div key={i} className="transfer">
                         <span className="transfer-name">
-                          <img src={avatarUrl(t.from, 36)} alt="" />
-                          {t.from}
+                          <img src={memberAvatar(t.from, 36)} alt="" />
+                          {memberName(t.from)}
                         </span>
                         <span className="transfer-arrow">→</span>
                         <span className="transfer-name">
-                          <img src={avatarUrl(t.to, 36)} alt="" />
-                          {t.to}
+                          <img src={memberAvatar(t.to, 36)} alt="" />
+                          {memberName(t.to)}
                         </span>
                         <span className="transfer-amount">{formatAmount(t.amount, group.currency)}</span>
                       </div>
@@ -127,12 +129,12 @@ export default function AdminGroup({ groupId, me }: { groupId: string; me: strin
               if (e.type === 'void') {
                 return (
                   <div key={e.id} className="event">
-                    <img src={avatarUrl(e.author, 56)} alt="" className="event-avatar" />
+                    <img src={memberAvatar(e.author, 56)} alt="" className="event-avatar" />
                     <div className="event-body">
                       <p className="event-title">
                         <span className="event-void">VOID</span> · {e.targetId}
                       </p>
-                      <p className="event-meta">{e.author} · {fmtDate(e.ts)}</p>
+                      <p className="event-meta">{memberName(e.author)} · {fmtDate(e.ts)}</p>
                     </div>
                   </div>
                 )
@@ -140,13 +142,13 @@ export default function AdminGroup({ groupId, me }: { groupId: string; me: strin
               if (e.type === 'edit') {
                 return (
                   <div key={e.id} className="event">
-                    <img src={avatarUrl(e.author, 56)} alt="" className="event-avatar" />
+                    <img src={memberAvatar(e.author, 56)} alt="" className="event-avatar" />
                     <div className="event-body">
                       <p className="event-title">
                         <span className="event-edit">EDITED</span> · {e.targetId}
                       </p>
                       <p className="event-meta">
-                        {e.author} · {fmtDate(e.ts)} · now {fmtDate(new Date(e.date).toISOString())}
+                        {memberName(e.author)} · {fmtDate(e.ts)} · now {fmtDate(new Date(e.date).toISOString())}
                       </p>
                     </div>
                     <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
@@ -167,14 +169,14 @@ export default function AdminGroup({ groupId, me }: { groupId: string; me: strin
               const { effAmount, effDateMs, effNote, isVoided, edited } = expenseView(e)
               return (
                 <div key={e.id} className={`event ${isVoided ? 'voided' : ''}`}>
-                  <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
+                  <img src={memberAvatar(e.payer, 56)} alt="" className="event-avatar" />
                   <div className="event-body">
                     <p className="event-title">
-                      <strong>{e.payer}</strong> paid{effNote ? <> for <strong>{effNote}</strong></> : null}
+                      <strong>{memberName(e.payer)}</strong> paid{effNote ? <> for <strong>{effNote}</strong></> : null}
                       {edited && !isVoided ? <span className="event-edited-tag">edited</span> : null}
                     </p>
                     <p className="event-meta">
-                      split among {e.participants.join(', ')} · {fmtDate(new Date(effDateMs).toISOString())}
+                      split among {e.participants.map(memberName).join(', ')} · {fmtDate(new Date(effDateMs).toISOString())}
                     </p>
                   </div>
                   <span className="event-amount">{formatAmount(effAmount, group.currency)}</span>

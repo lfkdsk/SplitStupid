@@ -2,16 +2,47 @@
 // avatar at the requested size. No auth, no API quota, and it works for
 // any real GH login. Non-GitHub account keys get a local deterministic
 // monogram so Apple-only accounts do not render as broken images.
+import type { Member, UserProfile } from './types'
+
 export function avatarUrl(login: string, size = 40): string {
   if (!isLikelyGitHubLogin(login)) return monogramAvatarUrl(login, size)
   return `https://github.com/${encodeURIComponent(login)}.png?size=${size}`
+}
+
+export function memberProfile(
+  member: Member,
+  profiles?: Record<Member, UserProfile>,
+): UserProfile {
+  return profiles?.[member] || { key: member, displayName: member }
+}
+
+export function memberDisplayName(
+  member: Member,
+  profiles?: Record<Member, UserProfile>,
+): string {
+  return memberProfile(member, profiles).displayName
+}
+
+export function isOfflineProfile(profile: UserProfile | undefined): boolean {
+  return profile?.kind === 'offline' || profile?.key.startsWith('guest:') === true
+}
+
+export function memberAvatarUrl(
+  member: Member,
+  profiles?: Record<Member, UserProfile>,
+  size = 40,
+): string {
+  const profile = memberProfile(member, profiles)
+  if (profile.avatarUrl) return profile.avatarUrl
+  if (isOfflineProfile(profile)) return monogramAvatarUrl(profile.displayName, size)
+  return avatarUrl(profile.providerLogin || member, size)
 }
 
 function isLikelyGitHubLogin(login: string): boolean {
   return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(login)
 }
 
-function monogramAvatarUrl(login: string, size: number): string {
+export function monogramAvatarUrl(login: string, size: number): string {
   const safeSize = Math.max(1, Math.round(size))
   const colors = [
     ['#0f766e', '#ecfeff'],

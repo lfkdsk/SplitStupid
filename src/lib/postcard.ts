@@ -13,7 +13,7 @@
 //   • Bottom-L   — italic tagline + tilted olive FINALIZED stamp
 
 import type { Group } from '@splitstupid/core'
-import { formatAmount } from '@splitstupid/core'
+import { formatAmount, memberAvatarUrl, memberDisplayName } from '@splitstupid/core'
 
 const PAPER = '#faf6ef'
 const INK = '#1a1410'
@@ -38,10 +38,11 @@ export async function renderPostcard(input: PostcardInput): Promise<HTMLCanvasEl
   }
 
   const { group } = input
+  const name = (member: string) => memberDisplayName(member, group.profiles)
 
   const displayMembers = group.members.slice(0, 4)
   const remaining = Math.max(0, group.members.length - displayMembers.length)
-  const avatars = await Promise.all(displayMembers.map(loadAvatar))
+  const avatars = await Promise.all(displayMembers.map(m => loadAvatar(memberAvatarUrl(m, group.profiles, 120))))
 
   const scale = Math.max(2, Math.min(3, Math.ceil(window.devicePixelRatio || 1) + 1))
   const out = document.createElement('canvas')
@@ -81,7 +82,7 @@ export async function renderPostcard(input: PostcardInput): Promise<HTMLCanvasEl
   )
 
   // 4. Avatars row.
-  drawAvatars(ctx, displayMembers, avatars, remaining, PAD, 232)
+  drawAvatars(ctx, displayMembers.map(name), avatars, remaining, PAD, 232)
 
   // 5. Postmark — top-right, rotated 8°.
   drawPostmark(ctx, W - 134, 130, group.finalizedAt ?? group.createdAt)
@@ -406,7 +407,7 @@ function drawFinalizedStamp(ctx: CanvasRenderingContext2D, cx: number, cy: numbe
 
 // ----- shared utilities -------------------------------------------------
 
-async function loadAvatar(login: string): Promise<HTMLImageElement | null> {
+async function loadAvatar(src: string): Promise<HTMLImageElement | null> {
   // crossOrigin must be set BEFORE src for the request to include the
   // CORS preflight. GitHub avatars send `Access-Control-Allow-Origin: *`,
   // so this works for any real login. For typo'd logins (or if GH is
@@ -422,7 +423,7 @@ async function loadAvatar(login: string): Promise<HTMLImageElement | null> {
     img.crossOrigin = 'anonymous'
     img.onload = () => finish(img)
     img.onerror = () => finish(null)
-    img.src = `https://github.com/${encodeURIComponent(login)}.png?size=120`
+    img.src = src
     // Hard cap so a slow network can't keep the modal in the busy state.
     setTimeout(() => finish(null), 4000)
   })

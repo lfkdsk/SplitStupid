@@ -538,11 +538,26 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   box-shadow: none;
 }
 
-/* Owner's "add a past split-mate" panel */
+/* Owner's "add people" panel */
 .friends-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.offline-add-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.offline-add-form input {
+  min-width: 0;
+  flex: 1;
+}
+
+.offline-add-form button {
+  flex: 0 0 auto;
 }
 
 /* Tappable chip that adds a friend to the roster. Mirrors .member-chip but
@@ -1160,10 +1175,8 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   color: var(--accent);
 }
 
-/* Fixed-payer row inside Add expense — replaces the old payer dropdown,
-   since you can only record expenses you yourself paid. The avatar +
-   login is a visual reminder, the amount input takes the rest of the
-   row. */
+/* Payer row inside Add expense. Most members see themselves fixed here;
+   owners can switch to an offline member when recording a delegated payment. */
 .payer-fixed {
   display: flex;
   align-items: center;
@@ -1184,6 +1197,17 @@ button.full { width: 100%; padding: 13px 18px; font-size: 15px; }
   white-space: nowrap;
   flex-shrink: 0;
   padding-right: 4px;
+}
+.payer-select {
+  flex: 0 1 auto;
+  min-width: 96px;
+  max-width: 180px;
+  border: 0;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 7px 8px;
 }
 .payer-fixed input.amount {
   flex: 1;
@@ -1974,4 +1998,3 @@ button.landing-cta {
   border-bottom: 1px dashed transparent;
 }
 .invite-footnote-link:hover { border-bottom-color: var(--fg-muted); }
-

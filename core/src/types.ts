@@ -6,6 +6,7 @@ export type Member = string // canonical SplitStupid account key
 
 export interface UserProfile {
   key: Member
+  kind?: 'account' | 'offline'
   displayName: string
   avatarUrl?: string
   email?: string

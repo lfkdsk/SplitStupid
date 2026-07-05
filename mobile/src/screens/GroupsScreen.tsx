@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useFocusEffect, type NavigationProp } from '@react-navigation/native'
 import { useGroups } from '@splitstupid/hooks'
-import type { GroupSummary } from '@splitstupid/core'
+import { memberDisplayName, type GroupSummary } from '@splitstupid/core'
 import type { RootStackParamList } from '../navigation/types'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
@@ -101,7 +101,7 @@ export default function GroupsScreen({ navigation }: { navigation: NavigationPro
           <Pressable style={styles.groupLink} onPress={() => navigation.navigate('Group', { groupId: item.id })}>
             <View style={styles.avatarStack}>
               {item.members.slice(0, 4).map((m, i) => (
-                <Avatar key={m} login={m} size={28} style={{ marginLeft: i === 0 ? 0 : -10 }} />
+                <Avatar key={m} login={m} profile={item.profiles?.[m]} size={28} style={{ marginLeft: i === 0 ? 0 : -10 }} />
               ))}
             </View>
             <View style={{ flex: 1, gap: 4 }}>
@@ -110,7 +110,7 @@ export default function GroupsScreen({ navigation }: { navigation: NavigationPro
                 {item.finalizedAt != null && <Text style={styles.finalizedTag}>FINALIZED</Text>}
               </View>
               <Text style={styles.groupMeta}>
-                {item.role === 'owner' ? 'owner' : `joined · ${item.owner}`} · {item.currency.toUpperCase()} ·{' '}
+                {item.role === 'owner' ? 'owner' : `joined · ${memberDisplayName(item.owner, item.profiles)}`} · {item.currency.toUpperCase()} ·{' '}
                 {item.eventCount} {item.eventCount === 1 ? 'event' : 'events'}
               </Text>
             </View>

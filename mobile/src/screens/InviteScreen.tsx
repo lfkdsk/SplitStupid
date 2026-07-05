@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StackActions, type NavigationProp, type RouteProp } from '@react-navigation/native'
-import { joinGroup } from '@splitstupid/core'
+import { joinGroup, memberDisplayName } from '@splitstupid/core'
 import { useInvite } from '@splitstupid/hooks'
 import type { RootStackParamList } from '../navigation/types'
 import { useAuth } from '../auth/AuthContext'
@@ -54,9 +54,9 @@ export default function InviteScreen({
         ) : null}
         {invite ? (
           <Card style={{ alignItems: 'center', gap: space(3), width: '100%' }}>
-            <Avatar login={invite.owner} size={64} />
+            <Avatar login={invite.owner} profile={invite.profiles?.[invite.owner]} size={64} />
             <Text style={styles.invited}>
-              <Text style={{ fontWeight: '600' }}>{invite.owner}</Text> invited you to join
+              <Text style={{ fontWeight: '600' }}>{memberDisplayName(invite.owner, invite.profiles)}</Text> invited you to join
             </Text>
             <Text style={styles.groupName}>{invite.name}</Text>
             <Text style={styles.meta}>
