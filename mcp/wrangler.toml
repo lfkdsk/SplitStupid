@@ -1,0 +1,18 @@
+# ChatGPT Connector / MCP facade for SplitStupid.
+# Custom domain target: mcp.splitstupid.lfkdsk.org/*
+
+name = "splitstupid-mcp"
+main = "src/index.ts"
+compatibility_date = "2025-12-01"
+
+[vars]
+CONNECTOR_ORIGIN = "https://mcp.splitstupid.lfkdsk.org"
+SPLITSTUPID_API_URL = "https://api.splitstupid.lfkdsk.org"
+ALLOWED_ORIGINS = "https://chatgpt.com,https://chat.openai.com,http://localhost:6274"
+ACCESS_TOKEN_TTL_SECONDS = "1800"
+REFRESH_TOKEN_TTL_SECONDS = "7776000"
+GITHUB_CLIENT_ID = ""
+
+# Required production secrets:
+#   npx wrangler secret put GITHUB_CLIENT_SECRET
+#   npx wrangler secret put TOKEN_SECRET

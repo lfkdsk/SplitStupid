@@ -6,7 +6,8 @@
   "workspaces": [
     "core",
     "hooks",
-    "mobile"
+    "mobile",
+    "mcp"
   ],
   "scripts": {
     "dev": "vite",
