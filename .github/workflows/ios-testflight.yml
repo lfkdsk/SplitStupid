@@ -1,0 +1,125 @@
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build and submit profile.
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+      auto_submit:
+        description: Submit the completed iOS build to TestFlight.
+        required: true
+        default: true
+        type: boolean
+      no_wait:
+        description: Trigger the EAS build and exit without waiting for completion.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    name: Build and submit iOS
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            worker/package-lock.json
+
+      - name: Check Expo token
+        run: |
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "Missing GitHub secret: EXPO_TOKEN"
+            exit 1
+          fi
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Install Worker dependencies
+        run: npm ci
+        working-directory: worker
+
+      - name: Typecheck and test
+        run: |
+          npm run typecheck
+          npm test --workspace @splitstupid/core
+          npm run typecheck --workspace @splitstupid/mobile
+        working-directory: .
+
+      - name: Typecheck Worker
+        run: npm run typecheck
+        working-directory: worker
+
+      - name: Restore optional App Store Connect API key
+        env:
+          EXPO_ASC_API_KEY_P8: ${{ secrets.EXPO_ASC_API_KEY_P8 }}
+          EXPO_ASC_KEY_ID: ${{ secrets.EXPO_ASC_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.EXPO_ASC_ISSUER_ID }}
+          EXPO_APPLE_TEAM_ID: ${{ secrets.EXPO_APPLE_TEAM_ID }}
+          EXPO_APPLE_TEAM_TYPE: ${{ secrets.EXPO_APPLE_TEAM_TYPE }}
+        run: |
+          if [ -n "${EXPO_ASC_API_KEY_P8:-}" ]; then
+            if [ -z "${EXPO_ASC_KEY_ID:-}" ] || [ -z "${EXPO_ASC_ISSUER_ID:-}" ]; then
+              echo "EXPO_ASC_API_KEY_P8 requires EXPO_ASC_KEY_ID and EXPO_ASC_ISSUER_ID."
+              exit 1
+            fi
+
+            ASC_API_KEY_PATH="$RUNNER_TEMP/AuthKey_${EXPO_ASC_KEY_ID}.p8"
+            printf '%s' "$EXPO_ASC_API_KEY_P8" > "$ASC_API_KEY_PATH"
+            chmod 600 "$ASC_API_KEY_PATH"
+            {
+              echo "EXPO_ASC_API_KEY_PATH=$ASC_API_KEY_PATH"
+              echo "EXPO_ASC_KEY_ID=$EXPO_ASC_KEY_ID"
+              echo "EXPO_ASC_ISSUER_ID=$EXPO_ASC_ISSUER_ID"
+              if [ -n "${EXPO_APPLE_TEAM_ID:-}" ]; then echo "EXPO_APPLE_TEAM_ID=$EXPO_APPLE_TEAM_ID"; fi
+              if [ -n "${EXPO_APPLE_TEAM_TYPE:-}" ]; then echo "EXPO_APPLE_TEAM_TYPE=$EXPO_APPLE_TEAM_TYPE"; fi
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Build iOS and submit to TestFlight
+        working-directory: mobile
+        run: |
+          SUBMIT_ARGS=""
+          if [ "${{ inputs.auto_submit }}" = "true" ]; then
+            SUBMIT_ARGS="--auto-submit"
+          fi
+
+          WAIT_ARGS=""
+          if [ "${{ inputs.no_wait }}" = "true" ]; then
+            WAIT_ARGS="--no-wait"
+          fi
+
+          eas build \
+            --platform ios \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            $SUBMIT_ARGS \
+            $WAIT_ARGS
