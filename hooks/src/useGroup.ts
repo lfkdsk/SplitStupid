@@ -13,6 +13,7 @@ import {
   joinGroup,
   removeMember,
   addMember,
+  addOfflineMember,
   listFriends,
   finalizeGroup,
   reopenGroup,
@@ -58,6 +59,8 @@ export interface ExpenseView {
 export interface AddExpenseInput {
   amountStr: string
   note: string
+  /** Defaults to the authenticated user. Owners may pass an offline member. */
+  payer?: Member
   participants: Member[]
   /** Unix ms to backdate to; omit for "now". */
   dateMs?: number
@@ -105,6 +108,7 @@ export interface UseGroup {
   finalize: () => Promise<void>
   reopen: () => Promise<void>
   addFriend: (login: Member) => Promise<void>
+  addOffline: (name: string) => Promise<void>
   /** Self-leave or owner-kick (same endpoint). Returns 'left' on self-leave
    *  so the caller can navigate away; 'removed' otherwise. */
   removeSelfOrMember: (login: Member) => Promise<'left' | 'removed' | undefined>
@@ -252,6 +256,10 @@ export function useGroup(groupId: string, me: Member): UseGroup {
     (login: Member) => run(async () => { await addMember(groupId, login); await refresh() }),
     [run, groupId, refresh],
   )
+  const addOffline = useCallback(
+    (name: string) => run(async () => { await addOfflineMember(groupId, name); await refresh() }),
+    [run, groupId, refresh],
+  )
   const voidExpense = useCallback(
     (targetId: string) => run(async () => { await postEvent(groupId, makeVoid({ targetId })); await refresh() }),
     [run, groupId, refresh],
@@ -294,7 +302,7 @@ export function useGroup(groupId: string, me: Member): UseGroup {
         await postEvent(
           group.id,
           makeExpense({
-            payer: me,
+            payer: input.payer || me,
             amount,
             participants: input.participants,
             split: 'equal',
@@ -363,6 +371,6 @@ export function useGroup(groupId: string, me: Member): UseGroup {
     balances, transfers, maxBalance, settlementRoster,
     isOwner, isMember, isFinalized, isEven, lastSettledAt, shareUrl, expenseView,
     friends, availableFriends, loadFriends,
-    join, addExpense, voidExpense, saveEdit, settleUp, finalize, reopen, addFriend, removeSelfOrMember,
+    join, addExpense, voidExpense, saveEdit, settleUp, finalize, reopen, addFriend, addOffline, removeSelfOrMember,
   }
 }

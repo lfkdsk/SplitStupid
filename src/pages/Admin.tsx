@@ -7,7 +7,8 @@
 // than an empty list).
 import { useEffect, useState } from 'react'
 import {
-  avatarUrl,
+  memberAvatarUrl,
+  memberDisplayName,
   listAllGroups,
   listAllUsers,
   type AdminGroupSummary,
@@ -61,12 +62,15 @@ export default function Admin() {
         </p>
         {groups === null && <p className="empty">Loading…</p>}
         {groups && groups.length === 0 && <p className="empty">No groups.</p>}
-        {groups && groups.map(g => (
+        {groups && groups.map(g => {
+          const memberName = (m: string) => memberDisplayName(m, g.profiles)
+          const memberAvatar = (m: string, size: number) => memberAvatarUrl(m, g.profiles, size)
+          return (
           <div key={g.id} className="group-row">
             <a href={`#/admin/g/${g.id}`} className="group-link">
               <div className="avatar-stack">
                 {g.members.slice(0, 4).map(m => (
-                  <img key={m} src={avatarUrl(m, 56)} alt={m} />
+                  <img key={m} src={memberAvatar(m, 56)} alt={memberName(m)} />
                 ))}
               </div>
               <div style={{ minWidth: 0 }}>
@@ -77,7 +81,7 @@ export default function Admin() {
                   )}
                 </h3>
                 <p className="group-meta">
-                  {g.owner}
+                  {memberName(g.owner)}
                   {' · '}{g.currency}
                   {' · '}{g.memberCount} member{g.memberCount === 1 ? '' : 's'}
                   {' · '}{g.eventCount} event{g.eventCount === 1 ? '' : 's'}
@@ -87,7 +91,7 @@ export default function Admin() {
               <span className="group-link-chev">→</span>
             </a>
           </div>
-        ))}
+        )})}
       </div>
 
       <div className="card">
@@ -100,19 +104,19 @@ export default function Admin() {
         </p>
         {users === null && <p className="empty">Loading…</p>}
         {users && users.length === 0 && <p className="empty">No users.</p>}
-        {users && users.map(u => (
+        {users && users.map(u => {
+          const displayName = u.profile?.displayName || u.login
+          const href = u.profile?.providerLogin
+            ? `https://github.com/${encodeURIComponent(u.profile.providerLogin)}`
+            : undefined
+          return (
           <div key={u.login} className="group-row">
-            <a
-              href={`https://github.com/${encodeURIComponent(u.login)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="group-link"
-            >
+            <a href={href} target={href ? '_blank' : undefined} rel={href ? 'noreferrer' : undefined} className="group-link">
               <div className="avatar-stack">
-                <img src={avatarUrl(u.login, 56)} alt={u.login} />
+                <img src={memberAvatarUrl(u.login, u.profile ? { [u.login]: u.profile } : undefined, 56)} alt={displayName} />
               </div>
               <div style={{ minWidth: 0 }}>
-                <h3 className="group-name">{u.login}</h3>
+                <h3 className="group-name">{displayName}</h3>
                 <p className="group-meta">
                   in {u.memberships} group{u.memberships === 1 ? '' : 's'}
                   {' · '}owns {u.owned}
@@ -120,10 +124,10 @@ export default function Admin() {
                   {u.lastActiveAt != null && <>{' · '}active {fmtDate(u.lastActiveAt)}</>}
                 </p>
               </div>
-              <span className="group-link-chev">↗</span>
+              <span className="group-link-chev">{href ? '↗' : '→'}</span>
             </a>
           </div>
-        ))}
+        )})}
       </div>
     </>
   )

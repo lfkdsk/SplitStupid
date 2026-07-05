@@ -1,4 +1,4 @@
-import { avatarUrl } from '@splitstupid/core'
+import { memberAvatarUrl, memberDisplayName } from '@splitstupid/core'
 import { useInvite } from '@splitstupid/hooks'
 import { isOAuthConfigured, startOAuthFlow } from '../lib/oauth'
 import Setup from './Setup'
@@ -38,16 +38,20 @@ export default function Invite({
             <p className="muted invite-loading">Loading invite…</p>
           ) : (
             <>
+              {(() => {
+                const ownerName = memberDisplayName(invite.owner, invite.profiles)
+                const ownerAvatar = memberAvatarUrl(invite.owner, invite.profiles, 64)
+                return (
               <div className="invite-card">
                 <div className="invite-owner">
                   <img
-                    src={avatarUrl(invite.owner, 64)}
+                    src={ownerAvatar}
                     alt=""
                     className="invite-owner-avatar"
                   />
                   <div className="invite-owner-text">
                     <span className="invite-owner-label">Owner</span>
-                    <strong className="invite-owner-login">{invite.owner}</strong>
+                    <strong className="invite-owner-login">{ownerName}</strong>
                   </div>
                 </div>
                 <p className="invite-prose">
@@ -70,6 +74,8 @@ export default function Invite({
                   )}
                 </p>
               </div>
+                )
+              })()}
 
               {invite.finalized ? (
                 <p className="invite-note muted">

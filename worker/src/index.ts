@@ -545,6 +545,7 @@ function mePayload(account: AuthAccount, isAdminUser?: boolean) {
   return {
     key: account.accountKey,
     login: account.accountKey,
+    kind: 'account',
     displayName: account.displayName,
     avatarUrl: account.avatarUrl,
     avatar: account.avatarUrl,
@@ -902,7 +903,7 @@ interface AdminUserRow {
 async function listAllUsers(env: Env): Promise<Response> {
   const rows = await env.DB.prepare(
     `WITH logins AS (
-       SELECT login FROM members
+       SELECT login FROM members WHERE login NOT LIKE 'guest:%'
        UNION SELECT owner_login FROM groups
        UNION SELECT author_login FROM events
      )
@@ -1063,21 +1064,21 @@ async function listFriends(env: Env, me: string): Promise<Response> {
     `SELECT DISTINCT m2.login AS login
      FROM members m1
      JOIN members m2 ON m1.group_id = m2.group_id
-     WHERE m1.login = ?1 AND m2.login <> ?1
+     WHERE m1.login = ?1 AND m2.login <> ?1 AND m2.login NOT LIKE 'guest:%'
      ORDER BY m2.login COLLATE NOCASE`,
   ).bind(me).all<{ login: string }>()
   return json((rows.results || []).map(r => r.login))
 }
 
-// POST /groups/:id/members — body: { login }. Owner-only direct-add of a
-// past split-mate. The login must be someone the owner has actually shared
-// a group with before; this keeps the endpoint from becoming an
-// add-any-GitHub-user-by-name primitive (which would let an owner stuff a
-// stranger's login into a group's roster). The added member is not asked to
-// consent, but they'll see the group in their list and can self-leave.
+// POST /groups/:id/members — owner-only roster changes. `{ login }` pulls in
+// a past split-mate account; `{ offlineName }` creates/restores a group-scoped
+// guest member that can participate in splits without signing in.
 async function addMember(env: Env, me: string, id: string, body: any): Promise<Response> {
-  const login = stringField(body?.login, 'login', 1, 39) // GH login max length
-  if (typeof login !== 'string') return login
+  const hasLogin = body?.login !== undefined
+  const hasOfflineName = body?.offlineName !== undefined
+  if (hasLogin === hasOfflineName) {
+    return json({ error: 'send exactly one of login or offlineName' }, 400)
+  }
 
   const group = await env.DB.prepare(
     `SELECT owner_login, finalized_at FROM groups WHERE id = ?`,
@@ -1090,11 +1091,23 @@ async function addMember(env: Env, me: string, id: string, body: any): Promise<R
     return json({ error: 'group is finalized; reopen it before changing membership' }, 409)
   }
 
+  if (hasOfflineName) {
+    const offlineName = stringField(body?.offlineName, 'offlineName', 1, 40)
+    if (typeof offlineName !== 'string') return offlineName
+    return await addOfflineMember(env, me, id, offlineName)
+  }
+
+  const login = stringField(body?.login, 'login', 1, 80)
+  if (typeof login !== 'string') return login
+  if (isGuestMemberKey(login)) {
+    return json({ error: 'guest members must be added by offlineName' }, 400)
+  }
+
   // Friendship gate: the login has to share some prior group with the owner.
   const friend = await env.DB.prepare(
     `SELECT 1 FROM members m1
      JOIN members m2 ON m1.group_id = m2.group_id
-     WHERE m1.login = ?1 AND m2.login = ?2 LIMIT 1`,
+     WHERE m1.login = ?1 AND m2.login = ?2 AND m2.login NOT LIKE 'guest:%' LIMIT 1`,
   ).bind(me, login).first<{ 1: number }>()
   if (!friend) {
     return json({ error: 'you can only add people you\'ve split with before' }, 403)
@@ -1106,6 +1119,45 @@ async function addMember(env: Env, me: string, id: string, body: any): Promise<R
   ).bind(id, login, Date.now()).run()
 
   return json({ ok: true })
+}
+
+async function addOfflineMember(env: Env, me: string, groupId: string, displayName: string): Promise<Response> {
+  const existing = await env.DB.prepare(
+    `SELECT member_key FROM offline_members
+     WHERE group_id = ?1 AND display_name = ?2 COLLATE NOCASE LIMIT 1`,
+  ).bind(groupId, displayName).first<{ member_key: string }>()
+
+  const memberKey = existing?.member_key || `guest:${groupId}:${randomId(10)}`
+  const now = Date.now()
+
+  const writes = [
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO members (group_id, login, joined_at) VALUES (?,?,?)`,
+    ).bind(groupId, memberKey, now),
+  ]
+
+  if (existing) {
+    writes.unshift(
+      env.DB.prepare(
+        `UPDATE offline_members SET display_name = ? WHERE member_key = ?`,
+      ).bind(displayName, memberKey),
+    )
+  } else {
+    writes.unshift(
+      env.DB.prepare(
+        `INSERT INTO offline_members (member_key, group_id, display_name, created_by, created_at)
+         VALUES (?,?,?,?,?)`,
+      ).bind(memberKey, groupId, displayName, me, now),
+    )
+  }
+
+  await env.DB.batch(writes)
+
+  return json({
+    ok: true,
+    member: memberKey,
+    profile: { key: memberKey, displayName, kind: 'offline' },
+  })
 }
 
 // POST /groups/:id/finalize — owner only. Locks the ledger; subsequent
@@ -1185,6 +1237,28 @@ async function removeMember(env: Env, me: string, id: string, target: string): P
   return json({ ok: true })
 }
 
+interface RosterInfo {
+  members: Set<string>
+  offline: Set<string>
+}
+
+async function readRoster(env: Env, groupId: string): Promise<RosterInfo> {
+  const rows = await env.DB.prepare(
+    `SELECT m.login AS login, o.member_key AS offline_key
+     FROM members m
+     LEFT JOIN offline_members o ON o.member_key = m.login
+     WHERE m.group_id = ?`,
+  ).bind(groupId).all<{ login: string; offline_key: string | null }>()
+
+  const members = new Set<string>()
+  const offline = new Set<string>()
+  for (const row of rows.results || []) {
+    members.add(row.login)
+    if (row.offline_key) offline.add(row.login)
+  }
+  return { members, offline }
+}
+
 // POST /groups/:id/events — body is the event sans id/ts/author. Must be
 // a member of the group. Voids are gated on (owner OR original author).
 async function postEvent(env: Env, me: string, id: string, body: any): Promise<Response> {
@@ -1233,14 +1307,6 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     const split = body.split
     const note = body.note
     if (typeof payer !== 'string') return json({ error: 'payer required' }, 400)
-    // You can only record an expense YOU paid. Otherwise alice could
-    // post "bob paid 10000" on bob's behalf, corrupting the
-    // GH-signed authorship guarantee. The owner gets no exception —
-    // if they want to record someone else's spend, that someone has
-    // to record it themselves.
-    if (payer !== me) {
-      return json({ error: 'you can only record expenses you paid' }, 403)
-    }
     if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
       return json({ error: 'amount must be a positive integer (minor units)' }, 400)
     }
@@ -1249,6 +1315,38 @@ async function postEvent(env: Env, me: string, id: string, body: any): Promise<R
     }
     if (split !== 'equal' && (typeof split !== 'object' || split === null)) {
       return json({ error: 'split must be "equal" or {login: amount} map' }, 400)
+    }
+    const roster = await readRoster(env, id)
+    if (!roster.members.has(payer)) {
+      return json({ error: 'payer must be a current member of this group' }, 400)
+    }
+    // You can only record an expense YOU paid, except the owner may record
+    // expenses paid by group-scoped offline members. Authorship still records
+    // the owner who entered it.
+    if (payer !== me && (group.owner_login !== me || !roster.offline.has(payer))) {
+      return json({ error: 'you can only record expenses you paid, except owner-recorded offline payments' }, 403)
+    }
+    const participantSet = new Set<string>()
+    for (const p of participants) {
+      if (typeof p !== 'string') return json({ error: 'participants must be strings' }, 400)
+      if (!roster.members.has(p)) return json({ error: 'participants must be current members of this group' }, 400)
+      if (participantSet.has(p)) return json({ error: 'participants must not contain duplicates' }, 400)
+      participantSet.add(p)
+    }
+    if (split !== 'equal') {
+      let explicitTotal = 0
+      for (const [member, share] of Object.entries(split)) {
+        if (!participantSet.has(member)) {
+          return json({ error: 'split keys must match participants' }, 400)
+        }
+        if (typeof share !== 'number' || !Number.isFinite(share) || !Number.isInteger(share) || share < 0) {
+          return json({ error: 'split amounts must be non-negative integers' }, 400)
+        }
+        explicitTotal += share
+      }
+      if (explicitTotal !== amount) {
+        return json({ error: 'split amounts must sum to amount' }, 400)
+      }
     }
     // Optional backdate. Must be a sane positive unix-ms integer. We don't
     // cap the future here: the client sends an absolute instant and a hard
@@ -1386,6 +1484,10 @@ function stringField(v: unknown, name: string, min: number, max: number): string
   return trimmed
 }
 
+function isGuestMemberKey(key: string): boolean {
+  return key.startsWith('guest:')
+}
+
 function randomId(hexChars: number): string {
   const bytes = new Uint8Array(Math.ceil(hexChars / 2))
   crypto.getRandomValues(bytes)
@@ -1448,12 +1550,13 @@ async function profilesFor(
   ).bind(...uniq).all<AccountRow>()
   const out: Record<string, unknown> = {}
   for (const key of uniq) {
-    out[key] = { key, displayName: key }
+    out[key] = { key, displayName: key, kind: isGuestMemberKey(key) ? 'offline' : 'account' }
   }
   for (const row of rows.results || []) {
     const account = accountFromRow(row)
     const profile: Record<string, unknown> = {
       key: account.accountKey,
+      kind: 'account',
       displayName: account.displayName,
       avatarUrl: account.avatarUrl,
       provider: account.provider,
@@ -1461,6 +1564,17 @@ async function profilesFor(
     }
     if (options.includeEmail) profile.email = account.email
     out[account.accountKey] = profile
+  }
+  const offlineRows = await env.DB.prepare(
+    `SELECT member_key, display_name
+     FROM offline_members WHERE member_key IN (${placeholders})`,
+  ).bind(...uniq).all<{ member_key: string; display_name: string }>()
+  for (const row of offlineRows.results || []) {
+    out[row.member_key] = {
+      key: row.member_key,
+      kind: 'offline',
+      displayName: row.display_name,
+    }
   }
   return out
 }

@@ -7,7 +7,7 @@
 // it as `Authorization: Bearer <token>` on every request. Provider credentials
 // (GitHub OAuth token / Apple identity token) are only exchanged at /auth/*.
 
-import type { AdminGroupSummary, AdminUserSummary, AuthMe, EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, SettleEvent, VoidEvent } from './types'
+import type { AdminGroupSummary, AdminUserSummary, AuthMe, EditEvent, ExpenseEvent, Group, GroupSummary, InviteSummary, SettleEvent, UserProfile, VoidEvent } from './types'
 
 let _baseUrl: string | undefined
 let _token: string | null = null
@@ -143,6 +143,15 @@ export const addMember = (groupId: string, login: string): Promise<{ ok: true }>
   call<{ ok: true }>(
     `/groups/${encodeURIComponent(groupId)}/members`,
     { method: 'POST', body: JSON.stringify({ login }) },
+  )
+
+export const addOfflineMember = (
+  groupId: string,
+  offlineName: string,
+): Promise<{ ok: true; member: string; profile: UserProfile }> =>
+  call<{ ok: true; member: string; profile: UserProfile }>(
+    `/groups/${encodeURIComponent(groupId)}/members`,
+    { method: 'POST', body: JSON.stringify({ offlineName }) },
   )
 
 // ---------------------------------------------------------------------------

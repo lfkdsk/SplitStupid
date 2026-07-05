@@ -97,6 +97,74 @@ export const RECEIPT_HTML = `<!doctype html>
     return \`\${major} \${currency}\`;
   }
 
+  // ../core/src/avatar.ts
+  function avatarUrl(login, size = 40) {
+    if (!isLikelyGitHubLogin(login)) return monogramAvatarUrl(login, size);
+    return \`https://github.com/\${encodeURIComponent(login)}.png?size=\${size}\`;
+  }
+  function memberProfile(member, profiles) {
+    return (profiles == null ? void 0 : profiles[member]) || { key: member, displayName: member };
+  }
+  function memberDisplayName(member, profiles) {
+    return memberProfile(member, profiles).displayName;
+  }
+  function isOfflineProfile(profile) {
+    return (profile == null ? void 0 : profile.kind) === "offline" || (profile == null ? void 0 : profile.key.startsWith("guest:")) === true;
+  }
+  function memberAvatarUrl(member, profiles, size = 40) {
+    const profile = memberProfile(member, profiles);
+    if (profile.avatarUrl) return profile.avatarUrl;
+    if (isOfflineProfile(profile)) return monogramAvatarUrl(profile.displayName, size);
+    return avatarUrl(profile.providerLogin || member, size);
+  }
+  function isLikelyGitHubLogin(login) {
+    return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(login);
+  }
+  function monogramAvatarUrl(login, size) {
+    const safeSize = Math.max(1, Math.round(size));
+    const colors = [
+      ["#0f766e", "#ecfeff"],
+      ["#7c2d12", "#fff7ed"],
+      ["#1d4ed8", "#eff6ff"],
+      ["#166534", "#f0fdf4"],
+      ["#6d28d9", "#f5f3ff"],
+      ["#be123c", "#fff1f2"]
+    ];
+    const [background, foreground] = colors[hash(login) % colors.length];
+    const label = initial(login);
+    const svg = \`<svg xmlns="http://www.w3.org/2000/svg" width="\${safeSize}" height="\${safeSize}" viewBox="0 0 \${safeSize} \${safeSize}"><rect width="\${safeSize}" height="\${safeSize}" rx="\${Math.round(safeSize * 0.22)}" fill="\${background}"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Helvetica, sans-serif" font-size="\${Math.round(safeSize * 0.42)}" font-weight="700" fill="\${foreground}">\${label}</text></svg>\`;
+    return \`data:image/svg+xml;utf8,\${encodeURIComponent(svg)}\`;
+  }
+  function initial(login) {
+    var _a;
+    const cleaned = login.replace(/^apple:/i, "").trim();
+    const char = ((_a = cleaned.match(/[A-Za-z0-9]/)) == null ? void 0 : _a[0]) || "?";
+    return escapeXml(char.toUpperCase());
+  }
+  function hash(input) {
+    let value = 0;
+    for (let i = 0; i < input.length; i += 1) {
+      value = value * 31 + input.charCodeAt(i) >>> 0;
+    }
+    return value;
+  }
+  function escapeXml(input) {
+    return input.replace(/[&<>"']/g, (ch) => {
+      switch (ch) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        default:
+          return "&apos;";
+      }
+    });
+  }
+
   // ../src/lib/receipt.ts
   var PAPER = "#faf6ef";
   var INK = "#1a1410";
@@ -219,6 +287,7 @@ export const RECEIPT_HTML = `<!doctype html>
   function buildBlocks(input, mctx) {
     var _a;
     const { group, balances, transfers } = input;
+    const name = (member) => memberDisplayName(member, group.profiles);
     const blocks = [];
     blocks.push(brandBlock());
     blocks.push(spacer(8));
@@ -239,7 +308,7 @@ export const RECEIPT_HTML = `<!doctype html>
       blocks.push(spacer(8));
     } else {
       for (const e of expenses) {
-        blocks.push(expenseRow(e, group.currency, mctx));
+        blocks.push(expenseRow(e, group.currency, mctx, name));
         blocks.push(spacer(10));
         total += e.amount;
       }
@@ -255,7 +324,7 @@ export const RECEIPT_HTML = `<!doctype html>
       blocks.push(subSectionHeader("WHAT EACH ACTUALLY SPENT"));
       blocks.push(spacer(8));
       for (const b of balances) {
-        blocks.push(costRow(b.member, (_a = cost.get(b.member)) != null ? _a : 0, group.currency));
+        blocks.push(costRow(name(b.member), (_a = cost.get(b.member)) != null ? _a : 0, group.currency));
       }
       blocks.push(spacer(8));
       blocks.push(captionLine(
@@ -271,14 +340,14 @@ export const RECEIPT_HTML = `<!doctype html>
     if (balances.length === 0 || balances.every((b) => b.balance === 0)) {
       blocks.push(emptyLine("all settled up."));
     } else {
-      for (const b of balances) blocks.push(balanceRow(b, group.currency));
+      for (const b of balances) blocks.push(balanceRow(b, group.currency, name));
     }
     blocks.push(spacer(18));
     if (transfers.length > 0) {
       blocks.push(subSectionHeader("SUGGESTED TRANSFERS"));
       blocks.push(spacer(8));
       for (const t of transfers) {
-        blocks.push(transferRow(t, group.currency));
+        blocks.push(transferRow(t, group.currency, name));
         blocks.push(spacer(4));
       }
     }
@@ -403,13 +472,13 @@ export const RECEIPT_HTML = `<!doctype html>
       }
     };
   }
-  function expenseRow(e, currency, mctx) {
+  function expenseRow(e, currency, mctx, name) {
     const innerW = W - PAD_X * 2;
     const titleFont = \`500 13px \${FONT_SANS}\`;
     const amountFont = \`600 13px \${FONT_MONO}\`;
     const noteFont = \`italic 500 12px \${FONT_DISPLAY}\`;
     const splitFont = \`500 10px \${FONT_MONO}\`;
-    const splitText = \`split among \${e.participants.join(", ")}\`;
+    const splitText = \`split among \${e.participants.map(name).join(", ")}\`;
     const dateText = formatDateShort(new Date(e.ts));
     mctx.font = noteFont;
     const noteLines = e.note ? wrapText(mctx, \`\\u201C\${e.note}\\u201D\`, innerW) : [];
@@ -427,7 +496,7 @@ export const RECEIPT_HTML = `<!doctype html>
         ctx.fillStyle = INK;
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(\`\${e.payer} paid\`, PAD_X, y);
+        ctx.fillText(\`\${name(e.payer)} paid\`, PAD_X, y);
         ctx.font = amountFont;
         ctx.textAlign = "right";
         ctx.fillText(formatAmount(e.amount, currency), W - PAD_X, y);
@@ -467,7 +536,7 @@ export const RECEIPT_HTML = `<!doctype html>
       }
     };
   }
-  function balanceRow(b, currency) {
+  function balanceRow(b, currency, name) {
     return {
       height: 19,
       paint(ctx, y) {
@@ -475,7 +544,7 @@ export const RECEIPT_HTML = `<!doctype html>
         ctx.fillStyle = INK;
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(b.member, PAD_X, y + 1);
+        ctx.fillText(name(b.member), PAD_X, y + 1);
         const sign = b.balance > 0 ? "+" : "";
         const color = b.balance > 0 ? POSITIVE : b.balance < 0 ? NEGATIVE : SUBTLE;
         ctx.font = \`600 12.5px \${FONT_MONO}\`;
@@ -518,7 +587,7 @@ export const RECEIPT_HTML = `<!doctype html>
       }
     };
   }
-  function transferRow(t, currency) {
+  function transferRow(t, currency, name) {
     return {
       height: 22,
       paint(ctx, y) {
@@ -530,7 +599,7 @@ export const RECEIPT_HTML = `<!doctype html>
         ctx.fillStyle = INK;
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(\`\${t.from}  \\u2192  \${t.to}\`, PAD_X + 14, y + 2);
+        ctx.fillText(\`\${name(t.from)}  \\u2192  \${name(t.to)}\`, PAD_X + 14, y + 2);
         ctx.font = \`700 13px \${FONT_MONO}\`;
         ctx.fillStyle = ACCENT;
         ctx.textAlign = "right";
@@ -674,9 +743,10 @@ export const RECEIPT_HTML = `<!doctype html>
       }
     }
     const { group } = input;
+    const name = (member) => memberDisplayName(member, group.profiles);
     const displayMembers = group.members.slice(0, 4);
     const remaining = Math.max(0, group.members.length - displayMembers.length);
-    const avatars = await Promise.all(displayMembers.map(loadAvatar));
+    const avatars = await Promise.all(displayMembers.map((m) => loadAvatar(memberAvatarUrl(m, group.profiles, 120))));
     const scale = Math.max(2, Math.min(3, Math.ceil(window.devicePixelRatio || 1) + 1));
     const out = document.createElement("canvas");
     out.width = Math.round(W2 * scale);
@@ -706,7 +776,7 @@ export const RECEIPT_HTML = `<!doctype html>
       11 * 0.22,
       "left"
     );
-    drawAvatars(ctx, displayMembers, avatars, remaining, PAD, 232);
+    drawAvatars(ctx, displayMembers.map(name), avatars, remaining, PAD, 232);
     drawPostmark(ctx, W2 - 134, 130, (_b = group.finalizedAt) != null ? _b : group.createdAt);
     drawTotal(ctx, group);
     ctx.font = \`italic 600 17px \${FONT_DISPLAY2}\`;
@@ -949,7 +1019,7 @@ export const RECEIPT_HTML = `<!doctype html>
     ctx.fillText(text, 0, 1);
     ctx.restore();
   }
-  async function loadAvatar(login) {
+  async function loadAvatar(src) {
     return new Promise((resolve) => {
       const img = new Image();
       let settled = false;
@@ -961,7 +1031,7 @@ export const RECEIPT_HTML = `<!doctype html>
       img.crossOrigin = "anonymous";
       img.onload = () => finish(img);
       img.onerror = () => finish(null);
-      img.src = \`https://github.com/\${encodeURIComponent(login)}.png?size=120\`;
+      img.src = src;
       setTimeout(() => finish(null), 4e3);
     });
   }

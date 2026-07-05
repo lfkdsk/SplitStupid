@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { avatarUrl } from '@splitstupid/core'
+import { memberAvatarUrl, memberDisplayName } from '@splitstupid/core'
 import { useGroups } from '@splitstupid/hooks'
 import type { GroupSummary } from '@splitstupid/core'
 import ConfirmModal from '../components/ConfirmModal'
@@ -76,12 +76,14 @@ export default function Groups({ me }: { me: string }) {
         {groups && groups.length === 0 && <p className="empty">No groups yet — create one above.</p>}
         {groups && groups.map(g => {
           const isOwned = g.role === 'owner'
+          const memberName = (m: string) => memberDisplayName(m, g.profiles)
+          const memberAvatar = (m: string, size: number) => memberAvatarUrl(m, g.profiles, size)
           return (
             <div key={g.id} className="group-row">
               <a href={`#/g/${g.id}`} className="group-link">
                 <div className="avatar-stack">
                   {g.members.slice(0, 4).map(m => (
-                    <img key={m} src={avatarUrl(m, 56)} alt={m} />
+                    <img key={m} src={memberAvatar(m, 56)} alt={memberName(m)} />
                   ))}
                 </div>
                 <div style={{ minWidth: 0 }}>
@@ -92,7 +94,7 @@ export default function Groups({ me }: { me: string }) {
                     )}
                   </h3>
                   <p className="group-meta">
-                    {isOwned ? 'owner' : `joined · ${g.owner}`}
+                    {isOwned ? 'owner' : `joined · ${memberName(g.owner)}`}
                     {' · '}{g.currency}
                     {' · '}{g.eventCount} event{g.eventCount === 1 ? '' : 's'}
                   </p>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { amountToInput, avatarUrl, formatAmount } from '@splitstupid/core'
+import { amountToInput, memberAvatarUrl, memberDisplayName, formatAmount } from '@splitstupid/core'
 import type { ExpenseEvent } from '@splitstupid/core'
 import { useGroup } from '@splitstupid/hooks'
 import ConfirmModal from '../components/ConfirmModal'
@@ -15,7 +15,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     isOwner, isMember, isFinalized, isEven, lastSettledAt, shareUrl, expenseView,
     friends, availableFriends, loadFriends,
     join, addExpense: postExpense, voidExpense, saveEdit: saveEditApi,
-    settleUp, finalize, reopen, addFriend: addFriendApi, removeSelfOrMember,
+    settleUp, finalize, reopen, addFriend: addFriendApi, addOffline, removeSelfOrMember,
   } = useGroup(groupId, me)
 
   // View-only state: form inputs, which panels/modals are open, and the
@@ -24,6 +24,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   const [copied, setCopied] = useState(false)
   const [friendsOpen, setFriendsOpen] = useState(false)
   const [addingFriend, setAddingFriend] = useState<string | null>(null)
+  const [offlineName, setOfflineName] = useState('')
+  const [addingOffline, setAddingOffline] = useState(false)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [postcardOpen, setPostcardOpen] = useState(false)
   const [confirmFinalize, setConfirmFinalize] = useState(false)
@@ -33,6 +35,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   // Add-expense form. Payer is always the authenticated user (server enforces).
   const [amountStr, setAmountStr] = useState('')
   const [note, setNote] = useState('')
+  const [payer, setPayer] = useState(me)
   const [participants, setParticipants] = useState<string[]>([])
   const [dateStr, setDateStr] = useState(() => toLocalInputValue(new Date()))
   const [dateEdited, setDateEdited] = useState(false)
@@ -49,7 +52,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   useEffect(() => {
     if (!group) return
     setParticipants(prev => prev.length ? prev : group.members)
-  }, [group])
+    setPayer(prev => (prev === me || group.members.includes(prev)) ? prev : me)
+  }, [group, me])
 
   if (!group) {
     return (
@@ -59,6 +63,12 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       </>
     )
   }
+
+  const profiles = group.profiles
+  const memberName = (m: string) => memberDisplayName(m, profiles)
+  const memberAvatar = (m: string, size: number) => memberAvatarUrl(m, profiles, size)
+  const offlineMembers = group.members.filter(m => profiles?.[m]?.kind === 'offline')
+  const payerOptions = isOwner ? [me, ...offlineMembers] : [me]
 
   async function handleJoin() { await join() }
 
@@ -71,7 +81,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     const ok = window.confirm(
       isSelf
         ? `Leave "${group.name}"? You can rejoin from the share link.`
-        : `Remove ${login} from "${group.name}"? Their past expenses stay in the ledger; they just can't record new ones.`,
+        : `Remove ${memberName(login)} from "${group.name}"? Their past expenses stay in the ledger; they just can't record new ones.`,
     )
     if (!ok) return
     const result = await removeSelfOrMember(login)
@@ -91,6 +101,16 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
     setAddingFriend(null)
   }
 
+  async function handleAddOffline(e: React.FormEvent) {
+    e.preventDefault()
+    const name = offlineName.trim()
+    if (!name) return
+    setAddingOffline(true)
+    await addOffline(name)
+    setAddingOffline(false)
+    setOfflineName('')
+  }
+
   async function handleFinalize() { await finalize(); setConfirmFinalize(false) }
   async function handleReopen() { await reopen(); setConfirmReopen(false) }
   async function handleSettle() { await settleUp(); setConfirmSettle(false) }
@@ -98,10 +118,11 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
   async function addExpense(e: React.FormEvent) {
     e.preventDefault()
     const dateMs = dateEdited ? (dateStr ? new Date(dateStr).getTime() : NaN) : undefined
-    const ok = await postExpense({ amountStr, note, participants, dateMs })
+    const ok = await postExpense({ amountStr, note, payer, participants, dateMs })
     if (ok) {
       setAmountStr('')
       setNote('')
+      setPayer(me)
       setDateStr(toLocalInputValue(new Date()))
       setDateEdited(false)
     }
@@ -167,7 +188,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
         <div className="group-header-meta">
           <span>{group.currency}</span>
           <span className="dot" />
-          <span>owner <strong>{group.owner}</strong></span>
+          <span>owner <strong>{memberName(group.owner)}</strong></span>
           <span className="dot" />
           <span>{group.members.length} member{group.members.length === 1 ? '' : 's'}</span>
         </div>
@@ -185,16 +206,16 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
             const canRemove = !isFinalized && !isOwnerChip && (isOwner || m === me)
             return (
               <span key={m} className="member-chip">
-                <img src={avatarUrl(m, 36)} alt="" />
-                {m}
+                <img src={memberAvatar(m, 36)} alt="" />
+                {memberName(m)}
                 {canRemove && (
                   <button
                     type="button"
                     className="chip-remove"
                     onClick={() => handleRemoveMember(m)}
                     disabled={busy}
-                    aria-label={m === me ? 'Leave group' : `Remove ${m}`}
-                    title={m === me ? 'Leave group' : `Remove ${m}`}
+                    aria-label={m === me ? 'Leave group' : `Remove ${memberName(m)}`}
+                    title={m === me ? 'Leave group' : `Remove ${memberName(m)}`}
                   >
                     ×
                   </button>
@@ -220,9 +241,9 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
               className="secondary"
               style={{ flex: '0 0 auto' }}
               onClick={toggleFriends}
-              title="Add someone you've split with before"
+              title="Add people to this group"
             >
-              <UsersIcon /> {friendsOpen ? 'Hide friends' : 'Add a friend'}
+              <UsersIcon /> {friendsOpen ? 'Hide people' : 'Add people'}
             </button>
           )}
           <button
@@ -296,8 +317,20 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
       {friendsOpen && isOwner && !isFinalized && (
         <div className="card friends-panel">
           <p className="section-title" style={{ margin: '0 0 4px' }}>
-            Add someone you've split with
+            Add people
           </p>
+          <form className="offline-add-form" onSubmit={handleAddOffline}>
+            <input
+              value={offlineName}
+              onChange={e => setOfflineName(e.target.value)}
+              placeholder="Offline name"
+              maxLength={40}
+              disabled={addingOffline}
+            />
+            <button type="submit" className="secondary" disabled={addingOffline || !offlineName.trim()}>
+              {addingOffline ? 'Adding…' : 'Add'}
+            </button>
+          </form>
           {friends == null ? (
             <p className="empty">Loading…</p>
           ) : availableFriends.length === 0 ? (
@@ -315,17 +348,17 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                   className="friend-add-chip"
                   onClick={() => addFriend(f)}
                   disabled={addingFriend != null}
-                  title={`Add ${f}`}
+                  title={`Add ${memberName(f)}`}
                 >
-                  <img src={avatarUrl(f, 36)} alt="" />
-                  {f}
+                  <img src={memberAvatar(f, 36)} alt="" />
+                  {memberName(f)}
                   <span className="friend-add-plus">{addingFriend === f ? '…' : '+'}</span>
                 </button>
               ))}
             </div>
           )}
           <p className="subtle muted" style={{ margin: '4px 0 0', maxWidth: 320 }}>
-            They're added to the roster right away and can leave anytime.
+            Offline people are added by name. Signed-in past split-mates can leave anytime.
           </p>
         </div>
       )}
@@ -350,8 +383,22 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           </div>
           <form onSubmit={addExpense} className="form-stack">
             <div className="payer-fixed">
-              <img src={avatarUrl(me, 36)} alt="" />
-              <span><strong>{me}</strong> paid</span>
+              <img src={memberAvatar(payer, 36)} alt="" />
+              {payerOptions.length > 1 ? (
+                <select
+                  className="payer-select"
+                  value={payer}
+                  onChange={e => setPayer(e.target.value)}
+                  aria-label="Paid by"
+                >
+                  {payerOptions.map(p => (
+                    <option key={p} value={p}>{memberName(p)}</option>
+                  ))}
+                </select>
+              ) : (
+                <span><strong>{memberName(me)}</strong></span>
+              )}
+              <span>paid</span>
               <input
                 className="amount"
                 inputMode="decimal"
@@ -385,8 +432,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                       checked={participants.includes(m)}
                       onChange={() => toggleParticipant(m)}
                     />
-                    <img src={avatarUrl(m, 36)} alt="" />
-                    {m}
+                    <img src={memberAvatar(m, 36)} alt="" />
+                    {memberName(m)}
                   </label>
                 ))}
               </div>
@@ -424,8 +471,8 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                 return (
                   <div key={b.member} className="balance-row">
                     <span className="balance-name">
-                      <img src={avatarUrl(b.member, 36)} alt="" />
-                      <span className="login">{b.member}</span>
+                      <img src={memberAvatar(b.member, 36)} alt="" />
+                      <span className="login">{memberName(b.member)}</span>
                     </span>
                     <div className="balance-bar">
                       <span className="balance-bar-mid" />
@@ -449,13 +496,13 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
                 {transfers.map((t, i) => (
                   <div key={i} className="transfer">
                     <span className="transfer-name">
-                      <img src={avatarUrl(t.from, 36)} alt="" />
-                      {t.from}
+                      <img src={memberAvatar(t.from, 36)} alt="" />
+                      {memberName(t.from)}
                     </span>
                     <span className="transfer-arrow">→</span>
                     <span className="transfer-name">
-                      <img src={avatarUrl(t.to, 36)} alt="" />
-                      {t.to}
+                      <img src={memberAvatar(t.to, 36)} alt="" />
+                      {memberName(t.to)}
                     </span>
                     <span className="transfer-amount">{formatAmount(t.amount, group.currency)}</span>
                   </div>
@@ -498,12 +545,12 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           if (e.type === 'void') {
             return (
               <div key={e.id} className="event">
-                <img src={avatarUrl(e.author, 56)} alt="" className="event-avatar" />
+                <img src={memberAvatar(e.author, 56)} alt="" className="event-avatar" />
                 <div className="event-body">
                   <p className="event-title">
                     <span className="event-void">VOID</span> · {e.targetId}
                   </p>
-                  <p className="event-meta">{e.author} · {fmtDate(e.ts)}</p>
+                  <p className="event-meta">{memberName(e.author)} · {fmtDate(e.ts)}</p>
                 </div>
               </div>
             )
@@ -511,13 +558,13 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           if (e.type === 'edit') {
             return (
               <div key={e.id} className="event">
-                <img src={avatarUrl(e.author, 56)} alt="" className="event-avatar" />
+                <img src={memberAvatar(e.author, 56)} alt="" className="event-avatar" />
                 <div className="event-body">
                   <p className="event-title">
                     <span className="event-edit">EDITED</span> · {e.targetId}
                   </p>
                   <p className="event-meta">
-                    {e.author} · {fmtDate(e.ts)} · now {fmtDate(new Date(e.date).toISOString())}
+                    {memberName(e.author)} · {fmtDate(e.ts)} · now {fmtDate(new Date(e.date).toISOString())}
                   </p>
                 </div>
                 <span className="event-amount">{formatAmount(e.amount, group.currency)}</span>
@@ -529,15 +576,15 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           const { effAmount, effDateMs, effNote, isVoided, edited, isSettled, canVoid, canEdit } = expenseView(e)
           return (
             <div key={e.id} className={`event ${isVoided ? 'voided' : ''} ${isSettled ? 'settled' : ''}`}>
-              <img src={avatarUrl(e.payer, 56)} alt="" className="event-avatar" />
+              <img src={memberAvatar(e.payer, 56)} alt="" className="event-avatar" />
               <div className="event-body">
                 <p className="event-title">
-                  <strong>{e.payer}</strong> paid{effNote ? <> for <strong>{effNote}</strong></> : null}
+                  <strong>{memberName(e.payer)}</strong> paid{effNote ? <> for <strong>{effNote}</strong></> : null}
                   {edited && !isVoided ? <span className="event-edited-tag">edited</span> : null}
                   {isSettled && !isVoided ? <span className="event-settled-tag">settled</span> : null}
                 </p>
                 <p className="event-meta">
-                  split among {e.participants.join(', ')} · {fmtDate(new Date(effDateMs).toISOString())}
+                  split among {e.participants.map(memberName).join(', ')} · {fmtDate(new Date(effDateMs).toISOString())}
                 </p>
               </div>
               <span className="event-amount">{formatAmount(effAmount, group.currency)}</span>
@@ -663,7 +710,7 @@ export default function Group({ groupId, me }: { groupId: string; me: string }) 
           voidTarget ? (
             <>
               <p>
-                Strike <strong>{voidTarget.payer}</strong>'s{' '}
+                Strike <strong>{memberName(voidTarget.payer)}</strong>'s{' '}
                 <strong>{formatAmount(voidTarget.amount, group.currency)}</strong>
                 {voidTarget.note ? <> for <strong>{voidTarget.note}</strong></> : null}{' '}
                 from the ledger? It stays in the activity log as a voided row, but

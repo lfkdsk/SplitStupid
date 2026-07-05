@@ -9,7 +9,7 @@
 // clipping path tight: we never have to overshoot or guess.
 
 import type { Balance, ExpenseEvent, Group, Transfer } from '@splitstupid/core'
-import { effectiveExpenses, formatAmount, realCostByMember, sinceLastSettle } from '@splitstupid/core'
+import { effectiveExpenses, formatAmount, memberDisplayName, realCostByMember, sinceLastSettle } from '@splitstupid/core'
 
 const PAPER = '#faf6ef'
 const INK = '#1a1410'
@@ -174,6 +174,7 @@ function buildBlocks(
   mctx: CanvasRenderingContext2D,
 ): { blocks: Block[]; titleIndex: number } {
   const { group, balances, transfers } = input
+  const name = (member: string) => memberDisplayName(member, group.profiles)
   const blocks: Block[] = []
 
   blocks.push(brandBlock())
@@ -206,7 +207,7 @@ function buildBlocks(
     blocks.push(spacer(8))
   } else {
     for (const e of expenses) {
-      blocks.push(expenseRow(e, group.currency, mctx))
+      blocks.push(expenseRow(e, group.currency, mctx, name))
       blocks.push(spacer(10))
       total += e.amount
     }
@@ -229,7 +230,7 @@ function buildBlocks(
     blocks.push(subSectionHeader('WHAT EACH ACTUALLY SPENT'))
     blocks.push(spacer(8))
     for (const b of balances) {
-      blocks.push(costRow(b.member, cost.get(b.member) ?? 0, group.currency))
+      blocks.push(costRow(name(b.member), cost.get(b.member) ?? 0, group.currency))
     }
     blocks.push(spacer(8))
     blocks.push(captionLine(
@@ -248,7 +249,7 @@ function buildBlocks(
   if (balances.length === 0 || balances.every(b => b.balance === 0)) {
     blocks.push(emptyLine('all settled up.'))
   } else {
-    for (const b of balances) blocks.push(balanceRow(b, group.currency))
+    for (const b of balances) blocks.push(balanceRow(b, group.currency, name))
   }
 
   blocks.push(spacer(18))
@@ -257,7 +258,7 @@ function buildBlocks(
     blocks.push(subSectionHeader('SUGGESTED TRANSFERS'))
     blocks.push(spacer(8))
     for (const t of transfers) {
-      blocks.push(transferRow(t, group.currency))
+      blocks.push(transferRow(t, group.currency, name))
       blocks.push(spacer(4))
     }
   }
@@ -410,6 +411,7 @@ function expenseRow(
   e: ExpenseEvent,
   currency: string,
   mctx: CanvasRenderingContext2D,
+  name: (member: string) => string,
 ): Block {
   const innerW = W - PAD_X * 2
   const titleFont = `500 13px ${FONT_SANS}`
@@ -417,7 +419,7 @@ function expenseRow(
   const noteFont = `italic 500 12px ${FONT_DISPLAY}`
   const splitFont = `500 10px ${FONT_MONO}`
 
-  const splitText = `split among ${e.participants.join(', ')}`
+  const splitText = `split among ${e.participants.map(name).join(', ')}`
   const dateText = formatDateShort(new Date(e.ts))
 
   mctx.font = noteFont
@@ -439,7 +441,7 @@ function expenseRow(
       ctx.fillStyle = INK
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      ctx.fillText(`${e.payer} paid`, PAD_X, y)
+      ctx.fillText(`${name(e.payer)} paid`, PAD_X, y)
 
       ctx.font = amountFont
       ctx.textAlign = 'right'
@@ -487,7 +489,7 @@ function totalRow(label: string, value: string): Block {
   }
 }
 
-function balanceRow(b: Balance, currency: string): Block {
+function balanceRow(b: Balance, currency: string, name: (member: string) => string): Block {
   return {
     height: 19,
     paint(ctx, y) {
@@ -495,7 +497,7 @@ function balanceRow(b: Balance, currency: string): Block {
       ctx.fillStyle = INK
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      ctx.fillText(b.member, PAD_X, y + 1)
+      ctx.fillText(name(b.member), PAD_X, y + 1)
 
       const sign = b.balance > 0 ? '+' : ''
       const color = b.balance > 0 ? POSITIVE : b.balance < 0 ? NEGATIVE : SUBTLE
@@ -544,7 +546,7 @@ function captionLine(text: string, mctx: CanvasRenderingContext2D): Block {
   }
 }
 
-function transferRow(t: Transfer, currency: string): Block {
+function transferRow(t: Transfer, currency: string, name: (member: string) => string): Block {
   return {
     height: 22,
     paint(ctx, y) {
@@ -558,7 +560,7 @@ function transferRow(t: Transfer, currency: string): Block {
       ctx.fillStyle = INK
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      ctx.fillText(`${t.from}  →  ${t.to}`, PAD_X + 14, y + 2)
+      ctx.fillText(`${name(t.from)}  →  ${name(t.to)}`, PAD_X + 14, y + 2)
 
       ctx.font = `700 13px ${FONT_MONO}`
       ctx.fillStyle = ACCENT

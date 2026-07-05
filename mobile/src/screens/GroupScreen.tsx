@@ -16,7 +16,7 @@ import QRCode from 'react-native-qrcode-svg'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { amountToInput, effectiveExpenses, formatAmount, type ExpenseEvent, type Member, type SettleEvent } from '@splitstupid/core'
+import { amountToInput, effectiveExpenses, formatAmount, memberDisplayName, type ExpenseEvent, type Member, type SettleEvent, type UserProfile } from '@splitstupid/core'
 import { useGroup, type AddExpenseInput } from '@splitstupid/hooks'
 import type { RootStackParamList } from '../navigation/types'
 import { useAuth } from '../auth/AuthContext'
@@ -38,12 +38,14 @@ export default function GroupScreen({ route, navigation }: Props) {
     group, loading, error, setError, refresh, busy,
     balances, transfers, maxBalance, settlementRoster, isOwner, isMember, isFinalized, isEven, lastSettledAt, shareUrl,
     join, addExpense, voidExpense, saveEdit, settleUp, finalize, reopen, expenseView,
-    friends, availableFriends, loadFriends, addFriend, removeSelfOrMember,
+    friends, availableFriends, loadFriends, addFriend, addOffline, removeSelfOrMember,
   } = useGroup(groupId, myLogin)
 
   const [shareOpen, setShareOpen] = useState(false)        // QR invite panel
   const [friendsOpen, setFriendsOpen] = useState(false)    // friend picker
   const [addingFriend, setAddingFriend] = useState<string | null>(null)
+  const [offlineName, setOfflineName] = useState('')
+  const [addingOffline, setAddingOffline] = useState(false)
   const [receiptOpen, setReceiptOpen] = useState(false)    // receipt image sheet
   const [postcardOpen, setPostcardOpen] = useState(false)  // trip postcard (finalized only)
   const [editTarget, setEditTarget] = useState<ExpenseEvent | null>(null) // expense being edited
@@ -67,6 +69,11 @@ export default function GroupScreen({ route, navigation }: Props) {
 
   const expenses = effectiveExpenses(group.events)
   const total = expenses.reduce((a, e) => a + e.amount, 0)
+  const profiles = group.profiles
+  const profileOf = (m: Member): UserProfile | undefined => profiles?.[m]
+  const memberName = (m: Member): string => memberDisplayName(m, profiles)
+  const offlineMembers = group.members.filter(m => profiles?.[m]?.kind === 'offline')
+  const payerOptions = isOwner ? [myLogin, ...offlineMembers] : [myLogin]
 
   // Display timeline: surviving (edit-folded) expenses interleaved with settle
   // checkpoints, in reverse append order, so the feed shows "Settled up"
@@ -96,16 +103,16 @@ export default function GroupScreen({ route, navigation }: Props) {
     )
   }
   function confirmVoid(e: ExpenseEvent) {
-    Alert.alert('Void expense', `Strike ${e.payer}'s ${formatAmount(e.amount, group!.currency)}${e.note ? ` for "${e.note}"` : ''} from the ledger? It drops out of the settlement.`,
+    Alert.alert('Void expense', `Strike ${memberName(e.payer)}'s ${formatAmount(e.amount, group!.currency)}${e.note ? ` for "${e.note}"` : ''} from the ledger? It drops out of the settlement.`,
       [{ text: 'Keep it', style: 'cancel' }, { text: 'Void it', style: 'destructive', onPress: () => voidExpense(e.id) }])
   }
   function confirmRemoveMember(login: Member) {
     const isSelf = login === myLogin
     Alert.alert(
-      isSelf ? 'Leave group' : `Remove ${login}`,
+      isSelf ? 'Leave group' : `Remove ${memberName(login)}`,
       isSelf
         ? `Leave "${group!.name}"? You can rejoin from the share link.`
-        : `Remove ${login}? Their past expenses stay in the ledger; they just can't record new ones.`,
+        : `Remove ${memberName(login)}? Their past expenses stay in the ledger; they just can't record new ones.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -130,6 +137,14 @@ export default function GroupScreen({ route, navigation }: Props) {
     await addFriend(login)
     setAddingFriend(null)
   }
+  async function onAddOffline() {
+    const name = offlineName.trim()
+    if (!name) return
+    setAddingOffline(true)
+    await addOffline(name)
+    setAddingOffline(false)
+    setOfflineName('')
+  }
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
@@ -148,7 +163,7 @@ export default function GroupScreen({ route, navigation }: Props) {
         <View>
           <Text style={styles.title}>{group.name}</Text>
           <Text style={styles.meta}>
-            {group.currency.toUpperCase()} · owner <Text style={styles.metaStrong}>{group.owner}</Text> ·{' '}
+            {group.currency.toUpperCase()} · owner <Text style={styles.metaStrong}>{memberName(group.owner)}</Text> ·{' '}
             {group.members.length} member{group.members.length === 1 ? '' : 's'}
             {isFinalized ? ' · FINALIZED' : ''}
           </Text>
@@ -160,8 +175,8 @@ export default function GroupScreen({ route, navigation }: Props) {
             const canRemove = !isFinalized && !isOwnerChip && (isOwner || m === myLogin)
             return (
               <View key={m} style={styles.memberChip}>
-                <Avatar login={m} size={20} />
-                <Text style={styles.memberChipText}>{m}</Text>
+                <Avatar login={m} profile={profileOf(m)} size={20} />
+                <Text style={styles.memberChipText}>{memberName(m)}</Text>
                 {canRemove && (
                   <Pressable onPress={() => confirmRemoveMember(m)} hitSlop={6} disabled={busy}>
                     <Text style={styles.chipRemove}>×</Text>
@@ -184,7 +199,7 @@ export default function GroupScreen({ route, navigation }: Props) {
           )}
           {isOwner && !isFinalized && (
             <Button
-              title={friendsOpen ? 'Hide friends' : 'Add a friend'}
+              title={friendsOpen ? 'Hide people' : 'Add people'}
               variant="secondary"
               icon={<AddFriendIcon color={colors.fg} />}
               onPress={toggleFriends}
@@ -228,10 +243,22 @@ export default function GroupScreen({ route, navigation }: Props) {
         </Card>
       )}
 
-      {/* Friend picker (owner). */}
+      {/* People picker (owner). */}
       {friendsOpen && isOwner && !isFinalized && (
         <Card style={{ gap: space(2) }}>
-          <SectionLabel>Add someone you’ve split with</SectionLabel>
+          <SectionLabel>Add people</SectionLabel>
+          <View style={styles.offlineRow}>
+            <TextInput
+              placeholder="Offline name"
+              placeholderTextColor={colors.fgSubtle}
+              value={offlineName}
+              onChangeText={setOfflineName}
+              maxLength={40}
+              editable={!addingOffline}
+              style={[styles.input, styles.offlineInput]}
+            />
+            <Button title="Add" onPress={onAddOffline} loading={addingOffline} style={styles.offlineAddBtn} />
+          </View>
           {friends == null ? (
             <Text style={styles.allSquare}>Loading…</Text>
           ) : availableFriends.length === 0 ? (
@@ -242,8 +269,8 @@ export default function GroupScreen({ route, navigation }: Props) {
             <View style={styles.chipRow}>
               {availableFriends.map(f => (
                 <Pressable key={f} style={styles.friendChip} onPress={() => onAddFriend(f)} disabled={addingFriend != null}>
-                  <Avatar login={f} size={20} />
-                  <Text style={styles.memberChipText}>{f}</Text>
+                  <Avatar login={f} profile={profileOf(f)} size={20} />
+                  <Text style={styles.memberChipText}>{memberName(f)}</Text>
                   <Text style={styles.friendPlus}>{addingFriend === f ? '…' : '+'}</Text>
                 </Pressable>
               ))}
@@ -256,8 +283,8 @@ export default function GroupScreen({ route, navigation }: Props) {
       {!isMember && !isFinalized && (
         <Card style={{ gap: space(2) }}>
           <SectionLabel>Join this group</SectionLabel>
-          <Text style={styles.qrHint}>Joining adds you to the roster as {myLogin}, so your expenses get split with the group.</Text>
-          <Button title={`Join as ${myLogin}`} onPress={join} loading={busy} />
+          <Text style={styles.qrHint}>Joining adds you to the roster as {memberName(myLogin)}, so your expenses get split with the group.</Text>
+          <Button title={`Join as ${memberName(myLogin)}`} onPress={join} loading={busy} />
         </Card>
       )}
 
@@ -281,8 +308,8 @@ export default function GroupScreen({ route, navigation }: Props) {
               return (
                 <View key={b.member} style={styles.balRow}>
                   <View style={styles.rowLeft}>
-                    <Avatar login={b.member} size={28} />
-                    <Text style={styles.balName} numberOfLines={1}>{b.member}</Text>
+                    <Avatar login={b.member} profile={profileOf(b.member)} size={28} />
+                    <Text style={styles.balName} numberOfLines={1}>{memberName(b.member)}</Text>
                   </View>
                   <View style={styles.balBar}>
                     <View style={styles.balBarMid} />
@@ -307,7 +334,7 @@ export default function GroupScreen({ route, navigation }: Props) {
                 <SectionLabel>Suggested transfers</SectionLabel>
                 {transfers.map((t, i) => (
                   <View key={i} style={styles.transferRow}>
-                    <Text style={styles.transferText}>{t.from} → {t.to}</Text>
+                    <Text style={styles.transferText}>{memberName(t.from)} → {memberName(t.to)}</Text>
                     <Text style={styles.transferAmt}>{formatAmount(t.amount, group.currency)}</Text>
                   </View>
                 ))}
@@ -327,7 +354,14 @@ export default function GroupScreen({ route, navigation }: Props) {
 
       {/* Add an expense. */}
       {isMember && !isFinalized && (
-        <AddExpense me={myLogin} roster={settlementRoster} currency={group.currency} onSubmit={addExpense} />
+        <AddExpense
+          me={myLogin}
+          roster={settlementRoster}
+          profiles={profiles}
+          payerOptions={payerOptions}
+          currency={group.currency}
+          onSubmit={addExpense}
+        />
       )}
 
       {/* Activity. */}
@@ -356,15 +390,15 @@ export default function GroupScreen({ route, navigation }: Props) {
             const ev = expenseView(e)
             return (
               <View key={e.id} style={[styles.activityRow, ev.isSettled && { opacity: 0.55 }]}>
-                <Avatar login={e.payer} size={36} />
+                <Avatar login={e.payer} profile={profileOf(e.payer)} size={36} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.activityTitle}>
-                    {e.payer} paid {formatAmount(ev.effAmount, group.currency)}
+                    {memberName(e.payer)} paid {formatAmount(ev.effAmount, group.currency)}
                     {ev.edited ? <Text style={styles.editedTag}>  edited</Text> : null}
                     {ev.isSettled ? <Text style={styles.editedTag}>  settled</Text> : null}
                   </Text>
                   {e.note ? <Text style={styles.activityNote}>“{e.note}”</Text> : null}
-                  <Text style={styles.activitySplit}>split among {e.participants.join(', ')}</Text>
+                  <Text style={styles.activitySplit}>split among {e.participants.map(memberName).join(', ')}</Text>
                 </View>
                 {(ev.canEdit || ev.canVoid) && (
                   <View style={styles.rowActions}>
@@ -404,22 +438,33 @@ export default function GroupScreen({ route, navigation }: Props) {
 function AddExpense({
   me,
   roster,
+  profiles,
+  payerOptions,
   currency,
   onSubmit,
 }: {
   me: Member
   roster: Member[]
+  profiles?: Record<Member, UserProfile>
+  payerOptions: Member[]
   currency: string
   onSubmit: (input: AddExpenseInput) => Promise<boolean>
 }) {
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const [payer, setPayer] = useState(me)
   const [participants, setParticipants] = useState<Member[]>(roster)
   const [submitting, setSubmitting] = useState(false)
   // Expense date — seeded to "now". Only send a backdate override once the
   // user actually touches the picker; otherwise the server stamps now.
   const [date, setDate] = useState(new Date())
   const [dateEdited, setDateEdited] = useState(false)
+  const profileOf = (m: Member): UserProfile | undefined => profiles?.[m]
+  const memberName = (m: Member): string => memberDisplayName(m, profiles)
+
+  useEffect(() => {
+    setPayer(prev => payerOptions.includes(prev) ? prev : me)
+  }, [me, payerOptions])
 
   function toggle(m: Member) {
     setParticipants(prev => (prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]))
@@ -427,11 +472,12 @@ function AddExpense({
 
   async function submit() {
     setSubmitting(true)
-    const ok = await onSubmit({ amountStr: amount, note, participants, dateMs: dateEdited ? date.getTime() : undefined })
+    const ok = await onSubmit({ amountStr: amount, note, payer, participants, dateMs: dateEdited ? date.getTime() : undefined })
     setSubmitting(false)
     if (ok) {
       setAmount('')
       setNote('')
+      setPayer(me)
       setParticipants(roster)
       setDate(new Date())
       setDateEdited(false)
@@ -442,10 +488,24 @@ function AddExpense({
     <Card style={{ gap: space(3) }}>
       <SectionLabel>Add expense</SectionLabel>
       <View style={styles.payerFixed}>
-        <Avatar login={me} size={28} />
-        <Text style={styles.payerText}>
-          <Text style={styles.payerStrong}>{me}</Text> paid
-        </Text>
+        <Avatar login={payer} profile={profileOf(payer)} size={28} />
+        {payerOptions.length > 1 ? (
+          <View style={styles.payerOptions}>
+            {payerOptions.map(p => {
+              const on = payer === p
+              return (
+                <Pressable key={p} onPress={() => setPayer(p)} style={[styles.payerOption, on && styles.payerOptionOn]}>
+                  <Text style={[styles.payerOptionText, on && styles.payerOptionTextOn]}>{memberName(p)}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        ) : (
+          <Text style={styles.payerText}>
+            <Text style={styles.payerStrong}>{memberName(me)}</Text>
+          </Text>
+        )}
+        <Text style={styles.payerText}>paid</Text>
         <TextInput
           placeholder={`Amount (${currency.toUpperCase()})`}
           placeholderTextColor={colors.fgSubtle}
@@ -473,8 +533,8 @@ function AddExpense({
             const on = participants.includes(m)
             return (
               <Pressable key={m} onPress={() => toggle(m)} style={[styles.checkPill, on && styles.checkPillOn]}>
-                <Avatar login={m} size={20} />
-                <Text style={[styles.checkPillText, on && styles.checkPillTextOn]}>{m}</Text>
+                <Avatar login={m} profile={profileOf(m)} size={20} />
+                <Text style={[styles.checkPillText, on && styles.checkPillTextOn]}>{memberName(m)}</Text>
               </Pressable>
             )
           })}
@@ -683,6 +743,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   friendPlus: { fontSize: 14, color: colors.accent, fontWeight: '600', marginLeft: 2 },
+  offlineRow: { flexDirection: 'row', alignItems: 'center', gap: space(2) },
+  offlineInput: { flex: 1 },
+  offlineAddBtn: { height: 44, paddingHorizontal: 14 },
 
   allSquare: { color: colors.fgSubtle, fontStyle: 'italic', fontFamily: fonts.display },
   balRow: { flexDirection: 'row', alignItems: 'center', gap: space(2), paddingVertical: 5 },
@@ -733,6 +796,18 @@ const styles = StyleSheet.create({
   },
   payerText: { fontSize: 15, color: colors.fg, fontFamily: fonts.sans },
   payerStrong: { fontWeight: '600' },
+  payerOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, flexShrink: 1 },
+  payerOption: {
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgElevated,
+    borderRadius: radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  payerOptionOn: { borderColor: colors.accent, backgroundColor: colors.accentBg },
+  payerOptionText: { fontSize: 12, color: colors.fgMuted, fontFamily: fonts.sans },
+  payerOptionTextOn: { color: colors.accent, fontWeight: '700' },
   amountInline: { flex: 1, height: 38, color: colors.fg, fontSize: 15, fontFamily: fonts.sans, padding: 0, textAlign: 'right' },
   splitLabel: { fontSize: 13, color: colors.fgMuted, marginBottom: 8, fontFamily: fonts.sans },
   dateField: {

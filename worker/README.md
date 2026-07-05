@@ -47,7 +47,7 @@ participate in Apple email merging until the user signs in through
 | GET    | `/groups/:id`              |                                    | Full group (meta, members, events).              |
 | DELETE | `/groups/:id`              |                                    | Owner only. Cascades to members + events.        |
 | POST   | `/groups/:id/join`         |                                    | Idempotent self-add to members.                  |
-| POST   | `/groups/:id/members`      | `{login}`                          | Owner only. `login` must be a prior split-mate.  |
+| POST   | `/groups/:id/members`      | `{login}` or `{offlineName}`       | Owner only. `login` must be a prior split-mate; `offlineName` creates/restores a no-login member. |
 | DELETE | `/groups/:id/members/:login` |                                  | Owner kicks, or member self-leaves.              |
 | POST   | `/groups/:id/events`       | `{type, ...}`                      | Member only. Voids: owner ∨ author. Edits: author only. |
 | GET    | `/admin/groups`            |                                    | **Admin only** (`ADMIN_LOGINS`). Every group; 403 otherwise. |
@@ -65,14 +65,16 @@ so the admin UI reuses it.
 an accounts table for provider identities, but legacy group data is still keyed
 by `login`/`account_key`, so the endpoint returns all active account keys with
 per-user aggregates: `{ login, owned, memberships, expenseCount, lastActiveAt?,
-profile? }`.
+profile? }`. Group-scoped offline members use `guest:<groupId>:<id>` keys and
+are intentionally excluded from `/friends` and `/admin/users`; their display
+profiles are returned on group reads through `profiles`.
 
 Event payloads:
 ```jsonc
 // type: "expense"
 {
   "type": "expense",
-  "payer": "lfkdsk",
+  "payer": "lfkdsk",                    // owner may use a group offline member key
   "amount": 12000,                       // minor units (cents / yen)
   "participants": ["lfkdsk", "alice"],
   "split": "equal",                       // or {alice: 6000, lfkdsk: 6000}
