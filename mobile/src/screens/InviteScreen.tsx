@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { type NavigationProp, type RouteProp } from '@react-navigation/native'
+import { StackActions, type NavigationProp, type RouteProp } from '@react-navigation/native'
 import { joinGroup } from '@splitstupid/core'
 import { useInvite } from '@splitstupid/hooks'
 import type { RootStackParamList } from '../navigation/types'
@@ -30,7 +30,7 @@ export default function InviteScreen({
     setError(null)
     try {
       await joinGroup(groupId)
-      navigation.navigate('Group', { groupId })
+      navigation.dispatch(StackActions.replace('Group', { groupId }))
     } catch (e) {
       setError((e as Error)?.message ?? 'Failed to join')
     } finally {

@@ -82,3 +82,19 @@ export function PostcardIcon({ color, size = 15 }: IconProps) {
     </Svg>
   )
 }
+
+export function ScanIcon({ color, size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+      <Path d="M3.5 7V4.75A1.25 1.25 0 0 1 4.75 3.5H7" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M13 3.5h2.25a1.25 1.25 0 0 1 1.25 1.25V7" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M16.5 13v2.25a1.25 1.25 0 0 1-1.25 1.25H13" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M7 16.5H4.75a1.25 1.25 0 0 1-1.25-1.25V13" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M6 10h8" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
+      <Rect x={6.25} y={6.25} width={2.25} height={2.25} rx={0.35} fill={color} />
+      <Rect x={11.5} y={6.25} width={2.25} height={2.25} rx={0.35} fill={color} />
+      <Rect x={6.25} y={11.5} width={2.25} height={2.25} rx={0.35} fill={color} />
+      <Path d="M11.5 11.5h2.25v2.25H11.5z" fill={color} />
+    </Svg>
+  )
+}
