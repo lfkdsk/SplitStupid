@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { CameraView, type BarcodeScanningResult, useCameraPermissions } from 'expo-camera'
-import { type NavigationProp, useFocusEffect } from '@react-navigation/native'
+import { StackActions, type NavigationProp, useFocusEffect } from '@react-navigation/native'
 import type { RootStackParamList } from '../navigation/types'
 import { Button, ErrorBanner } from '../components/ui'
 import { extractInviteGroupId } from '../lib/inviteLinks'
@@ -34,7 +34,7 @@ export default function ScanInviteScreen({ navigation }: { navigation: Navigatio
     }
 
     setScanned(true)
-    navigation.navigate('Invite', { groupId })
+    navigation.dispatch(StackActions.replace('Invite', { groupId }))
   }, [navigation])
 
   function scanAgain() {

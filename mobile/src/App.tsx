@@ -17,6 +17,7 @@ import InviteScreen from './screens/InviteScreen'
 import SettingsScreen from './screens/SettingsScreen'
 import ScanInviteScreen from './screens/ScanInviteScreen'
 import { HeaderAvatar } from './components/HeaderAvatar'
+import { HeaderScanButton } from './components/HeaderScanButton'
 
 // Wire @splitstupid/core's API client to the Worker before anything renders.
 bootstrapApi()
@@ -83,7 +84,15 @@ function RootNavigator() {
     <Stack.Navigator screenOptions={headerOptions}>
       {me ? (
         <>
-          <Stack.Screen name="Groups" component={GroupsScreen} options={{ title: 'SplitStupid', headerRight: () => <HeaderAvatar /> }} />
+          <Stack.Screen
+            name="Groups"
+            component={GroupsScreen}
+            options={{
+              title: 'SplitStupid',
+              headerLeft: () => <HeaderScanButton />,
+              headerRight: () => <HeaderAvatar />,
+            }}
+          />
           <Stack.Screen name="Group" component={GroupScreen} options={{ title: '', headerRight: () => <HeaderAvatar /> }} />
           <Stack.Screen name="ScanInvite" component={ScanInviteScreen} options={{ title: 'Scan invite' }} />
           <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
