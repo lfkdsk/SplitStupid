@@ -387,7 +387,7 @@ function FooterCta() {
         </button>
       )}
       <p className="landing-footer-foot">
-        SplitStupid · <a href="https://github.com/lfkdsk/splitstupid" target="_blank" rel="noreferrer">github.com/lfkdsk/splitstupid</a>
+        SplitStupid · <a href="/privacy.html">Privacy Policy</a> · <a href="https://github.com/lfkdsk/splitstupid" target="_blank" rel="noreferrer">github.com/lfkdsk/splitstupid</a>
       </p>
     </section>
   )

@@ -118,6 +118,10 @@ export default function Invite({
           <a href="#/" className="invite-footnote-link">
             What is SplitStupid?
           </a>
+          <span className="invite-footnote-dot"> · </span>
+          <a href="/privacy.html" className="invite-footnote-link">
+            Privacy Policy
+          </a>
         </p>
       </main>
     </div>

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#faf6ef" />
+    <title>Privacy Policy - SplitStupid</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf6ef;
+        --panel: #ffffff;
+        --fg: #1a1410;
+        --muted: #6f6356;
+        --subtle: #a89c8b;
+        --border: rgba(26, 20, 16, 0.12);
+        --accent: #c2410c;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15110d;
+          --panel: #1f1a14;
+          --fg: #f4ede1;
+          --muted: #a89c8b;
+          --subtle: #6f6356;
+          --border: rgba(244, 237, 225, 0.12);
+          --accent: #fb923c;
+        }
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.65 Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        width: min(760px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 48px 0 80px;
+      }
+
+      header {
+        margin-bottom: 32px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 28px;
+        color: var(--fg);
+        text-decoration: none;
+        font-family: Fraunces, Georgia, serif;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .mark {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: inline-grid;
+        place-items: center;
+        background: var(--fg);
+        color: var(--bg);
+        font-family: Fraunces, Georgia, serif;
+        font-style: italic;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      h1, h2 {
+        font-family: Fraunces, Georgia, serif;
+        letter-spacing: 0;
+        line-height: 1.15;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 48px;
+        font-weight: 600;
+      }
+
+      @media (max-width: 560px) {
+        h1 { font-size: 34px; }
+      }
+
+      h2 {
+        margin: 34px 0 10px;
+        font-size: 22px;
+        font-weight: 600;
+      }
+
+      p { margin: 0 0 14px; }
+
+      ul {
+        margin: 0 0 18px;
+        padding-left: 22px;
+      }
+
+      li + li { margin-top: 8px; }
+
+      a {
+        color: var(--accent);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+      }
+
+      .lede {
+        max-width: 640px;
+        color: var(--muted);
+        font-size: 17px;
+      }
+
+      .meta {
+        margin: 0 0 12px;
+        color: var(--subtle);
+        font-size: 13px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .panel {
+        margin: 28px 0;
+        padding: 18px 20px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      .panel p:last-child { margin-bottom: 0; }
+
+      footer {
+        margin-top: 44px;
+        padding-top: 22px;
+        border-top: 1px solid var(--border);
+        color: var(--subtle);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="/">
+          <span class="mark" aria-hidden="true">S</span>
+          SplitStupid
+        </a>
+        <p class="meta">Last updated: July 7, 2026</p>
+        <h1>Privacy Policy</h1>
+        <p class="lede">
+          SplitStupid is a small expense ledger for friend groups. This policy explains what data the web and iOS apps collect, how it is used, and how you can ask for it to be removed.
+        </p>
+      </header>
+
+      <section class="panel">
+        <p>
+          Short version: SplitStupid stores the account and group data needed to sign you in, show your groups, split expenses, and share invite links. It does not sell personal data, serve ads, or use data for cross-app tracking.
+        </p>
+      </section>
+
+      <h2>Data We Collect</h2>
+      <p>When you use SplitStupid, we may collect and store:</p>
+      <ul>
+        <li>Account identity data from Sign in with Apple or GitHub, such as a verified email address, display name, provider account identifier, provider login name, and avatar URL.</li>
+        <li>App session data used to keep you signed in.</li>
+        <li>Group data, including group names, currency, owner, members, invite identifiers, created dates, and finalized status.</li>
+        <li>Expense ledger data, including payer, participants, amount, expense date, notes, edit records, void records, settlement checkpoints, and author.</li>
+        <li>Offline member names that a group owner adds for people who do not sign in.</li>
+        <li>Basic technical data that is normally sent with web requests, such as IP address, device/browser information, request time, and server logs.</li>
+      </ul>
+
+      <h2>How We Collect Data</h2>
+      <p>
+        You provide most ledger data directly when you create groups, join groups, add expenses, edit entries, settle, finalize, or share invite links. Identity data is provided by Apple or GitHub only after you choose to sign in. The app stores session data locally on your device so it can authenticate requests to the SplitStupid API.
+      </p>
+
+      <h2>How We Use Data</h2>
+      <p>We use data to:</p>
+      <ul>
+        <li>Create and maintain your SplitStupid account.</li>
+        <li>Authenticate you and protect private group ledgers.</li>
+        <li>Show group members, balances, expenses, receipts, postcards, and invite previews.</li>
+        <li>Merge Apple and GitHub sign-ins when the verified email address matches.</li>
+        <li>Operate, debug, secure, and improve the service.</li>
+      </ul>
+
+      <h2>Sharing and Third Parties</h2>
+      <p>
+        SplitStupid does not sell personal data and does not share data for advertising or tracking. Your group ledger is visible to members of that group and, where applicable, to service administrators who maintain the system.
+      </p>
+      <p>SplitStupid relies on these third parties to provide the service:</p>
+      <ul>
+        <li>Apple, for Sign in with Apple.</li>
+        <li>GitHub, for GitHub sign-in and GitHub profile data.</li>
+        <li>Cloudflare, for hosting the API and database.</li>
+        <li>GitHub Pages, for hosting the public web app and this privacy policy.</li>
+      </ul>
+
+      <h2>Retention</h2>
+      <p>
+        Account, identity, group, membership, and ledger records are kept while they are needed to operate SplitStupid. Group owners can delete groups in the app. Some server or platform logs may be retained for a limited period for security and operations.
+      </p>
+
+      <h2>Your Choices</h2>
+      <ul>
+        <li>You can sign out at any time from the app.</li>
+        <li>You can delete groups that you own.</li>
+        <li>You can ask for account or ledger data to be deleted by opening an issue at <a href="https://github.com/lfkdsk/SplitStupid/issues">github.com/lfkdsk/SplitStupid/issues</a>.</li>
+        <li>You can manage Apple or GitHub account permissions from Apple ID settings or GitHub settings.</li>
+      </ul>
+
+      <h2>Children</h2>
+      <p>
+        SplitStupid is not intended for children under 13 and does not knowingly collect personal data from children under 13.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If the app's privacy practices change, this page will be updated with a new "Last updated" date.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        For privacy questions or deletion requests, open an issue at <a href="https://github.com/lfkdsk/SplitStupid/issues">github.com/lfkdsk/SplitStupid/issues</a>.
+      </p>
+
+      <footer>
+        <p>SplitStupid Privacy Policy · <a href="/">Back to SplitStupid</a></p>
+      </footer>
+    </main>
+  </body>
+</html>

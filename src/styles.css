@@ -150,6 +150,21 @@ a:hover {
 }
 .brand-mark::after { content: 'S'; transform: translateY(-1px); }
 
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.app-header-link {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+  border-bottom: 1px dashed transparent;
+}
+.app-header-link:hover { border-bottom-color: var(--fg-muted); }
+
 /* Account menu — the header shows only the avatar; tapping it opens a popover
    with the identity, Admin, and Sign out. iOS-style, and it keeps the header
    uncrowded on narrow screens (the old inline pill overflowed on mobile). */
@@ -2011,3 +2026,4 @@ button.landing-cta {
   border-bottom: 1px dashed transparent;
 }
 .invite-footnote-link:hover { border-bottom-color: var(--fg-muted); }
+.invite-footnote-dot { color: var(--fg-subtle); }

@@ -2,7 +2,7 @@
 // a tiny offline shell. App-shell is cached on first navigation; API
 // requests (api.splitstupid.lfkdsk.org) always go to the network.
 const CACHE = 'splitstupid-v1';
-const SHELL = ['/', '/icon.svg', '/manifest.webmanifest'];
+const SHELL = ['/', '/privacy.html', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

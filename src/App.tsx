@@ -133,7 +133,10 @@ export default function App() {
           <span className="brand-mark" aria-hidden="true" />
           SplitStupid
         </a>
-        <UserMenu login={me.login} avatar={me.avatar} onSignOut={signOut} />
+        <div className="app-header-actions">
+          <a className="app-header-link" href="/privacy.html">Privacy</a>
+          <UserMenu login={me.login} avatar={me.avatar} onSignOut={signOut} />
+        </div>
       </header>
       {isAdmin(me.login) && adminGroupMatch
         ? <AdminGroup groupId={adminGroupMatch[1]} me={me.login} />

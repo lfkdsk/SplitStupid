@@ -1,4 +1,4 @@
-import { Text, View, StyleSheet } from 'react-native'
+import { Linking, Text, View, StyleSheet } from 'react-native'
 import * as AppleAuthentication from 'expo-apple-authentication'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '../auth/AuthContext'
@@ -50,7 +50,15 @@ export default function SignInScreen() {
         )}
       </View>
 
-      <Text style={styles.footer}>Use Apple or GitHub. Matching verified emails share one account.</Text>
+      <Text style={styles.footer}>
+        Use Apple or GitHub. Matching verified emails share one account.{' '}
+        <Text
+          style={styles.footerLink}
+          onPress={() => Linking.openURL('https://splitstupid.lfkdsk.org/privacy.html')}
+        >
+          Privacy Policy
+        </Text>
+      </Text>
     </SafeAreaView>
   )
 }
@@ -74,4 +82,5 @@ const styles = StyleSheet.create({
   appleButton: { width: '100%', height: 44 },
   githubButton: { width: '100%', height: 44 },
   footer: { fontSize: 12, color: colors.fgSubtle, textAlign: 'center', paddingBottom: space(4), fontFamily: fonts.sans },
+  footerLink: { color: colors.accent, textDecorationLine: 'underline' },
 })
