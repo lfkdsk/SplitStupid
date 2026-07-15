@@ -6,7 +6,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Platform } from 'react-native'
 import * as FileSystem from 'expo-file-system/legacy'
 import * as SecureStore from 'expo-secure-store'
-import { authWithAppleIdentityToken, authWithGitHubToken, getMe, setApiToken, type AuthMe } from '@splitstupid/core'
+import { authWithAppleIdentityToken, authWithGitHubToken, getMe, setApiToken, updateMe, type AuthMe } from '@splitstupid/core'
 import { isAppleSignInAvailable, signInWithApple as requestAppleSignIn } from './apple'
 import { signInWithGitHub } from './oauth'
 
@@ -18,6 +18,7 @@ const ALLOW_FILE_TOKEN_FALLBACK = __DEV__ && Platform.OS === 'ios'
 interface Me {
   login: string
   avatar: string
+  displayName: string
 }
 
 interface AuthState {
@@ -28,6 +29,7 @@ interface AuthState {
   error: string | null
   signIn: () => Promise<void>
   signInWithApple: () => Promise<void>
+  updateDisplayName: (displayName: string) => Promise<void>
   signOut: () => Promise<void>
   clearError: () => void
 }
@@ -137,6 +139,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function updateDisplayName(displayName: string) {
+    const updated = await updateMe({ displayName })
+    setMe(toMe(updated))
+  }
+
   return (
     <AuthCtx.Provider
       value={{
@@ -147,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error,
         signIn,
         signInWithApple,
+        updateDisplayName,
         signOut,
         clearError: () => setError(null),
       }}
@@ -157,7 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 function toMe(user: AuthMe): Me {
-  return { login: user.key, avatar: user.avatarUrl || '' }
+  return { login: user.key, avatar: user.avatarUrl || '', displayName: user.displayName }
 }
 
 function isStoredSession(token: string): boolean {
