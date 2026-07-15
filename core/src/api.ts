@@ -68,6 +68,9 @@ export const authWithAppleIdentityToken = (input: {
 export const getMe = (): Promise<AuthMe> =>
   call<AuthMe>('/me')
 
+export const updateMe = (input: { displayName: string }): Promise<AuthMe> =>
+  call<AuthMe>('/me', { method: 'PATCH', body: JSON.stringify(input) })
+
 export const deleteAccount = (): Promise<void> =>
   call<void>('/me', { method: 'DELETE' })
 

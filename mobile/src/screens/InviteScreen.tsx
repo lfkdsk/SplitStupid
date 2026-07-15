@@ -66,7 +66,7 @@ export default function InviteScreen({
             </Text>
 
             {me ? (
-              <Button title={`Join as ${me.login}`} onPress={join} loading={joining} style={{ width: '100%' }} />
+              <Button title={`Join as ${me.displayName}`} onPress={join} loading={joining} style={{ width: '100%' }} />
             ) : isOAuthConfigured() ? (
               <Button title="Sign in to join" onPress={signIn} loading={signingIn} style={{ width: '100%' }} />
             ) : (

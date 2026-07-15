@@ -2,18 +2,44 @@
 // account identity, Sign out, and account deletion; it's laid out as grouped sections (iOS
 // settings style) so future preferences (default currency, theme,
 // notifications, …) slot in as new SectionLabel + card blocks.
-import { useState } from 'react'
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { deleteAccount as deleteAccountRequest } from '@splitstupid/core'
 import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../components/Avatar'
-import { ErrorBanner, SectionLabel } from '../components/ui'
+import { Button, ErrorBanner, SectionLabel } from '../components/ui'
 import { colors, fonts, radius, space } from '../theme'
 
 export default function SettingsScreen() {
-  const { me, signOut } = useAuth()
+  const { me, signOut, updateDisplayName } = useAuth()
+  const [displayName, setDisplayName] = useState(me?.displayName ?? '')
+  const [savingName, setSavingName] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setDisplayName(me?.displayName ?? '')
+  }, [me?.displayName])
+
+  const normalizedDisplayName = displayName.trim()
+  const canSaveName = normalizedDisplayName.length > 0
+    && normalizedDisplayName !== me?.displayName
+    && !savingName
+
+  async function saveDisplayName() {
+    if (!canSaveName) return
+    setSavingName(true)
+    setProfileError(null)
+    try {
+      await updateDisplayName(normalizedDisplayName)
+      setDisplayName(normalizedDisplayName)
+    } catch (e) {
+      setProfileError((e as Error)?.message || 'Failed to update display name')
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   async function deleteAccount() {
     setDeleting(true)
@@ -44,15 +70,39 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <SectionLabel>Account</SectionLabel>
       <View style={styles.card}>
         <View style={styles.accountRow}>
           {me ? <Avatar login={me.login} size={44} /> : null}
           <View style={{ flex: 1 }}>
-            <Text style={styles.muted}>Signed in as</Text>
-            <Text style={styles.login} numberOfLines={1}>{me?.login}</Text>
+            <Text style={styles.login} numberOfLines={1}>{me?.displayName}</Text>
+            <Text style={styles.muted} numberOfLines={1}>Account ID · {me?.login}</Text>
           </View>
+        </View>
+        <View style={styles.profileForm}>
+          <Text style={styles.fieldLabel}>Display name</Text>
+          <TextInput
+            value={displayName}
+            onChangeText={setDisplayName}
+            placeholder="Your name"
+            placeholderTextColor={colors.fgSubtle}
+            maxLength={80}
+            autoCapitalize="words"
+            autoCorrect={false}
+            textContentType="name"
+            returnKeyType="done"
+            onSubmitEditing={() => { void saveDisplayName() }}
+            style={styles.input}
+          />
+          <Text style={styles.profileHelp}>Shown to other members in groups, expenses, and invites.</Text>
+          {profileError ? <ErrorBanner message={profileError} onDismiss={() => setProfileError(null)} /> : null}
+          <Button
+            title="Save name"
+            onPress={() => { void saveDisplayName() }}
+            loading={savingName}
+            disabled={!canSaveName}
+          />
         </View>
       </View>
 
@@ -108,7 +158,21 @@ const styles = StyleSheet.create({
   },
   accountRow: { flexDirection: 'row', alignItems: 'center', gap: space(3), padding: space(4) },
   muted: { fontSize: 12, color: colors.fgMuted, fontFamily: fonts.sans },
-  login: { fontSize: 18, fontWeight: '600', color: colors.fg, fontFamily: fonts.display, marginTop: 2 },
+  login: { fontSize: 18, fontWeight: '600', color: colors.fg, fontFamily: fonts.display, marginBottom: 2 },
+  profileForm: { borderTopWidth: 1, borderTopColor: colors.border, padding: space(4), gap: space(2) },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: colors.fg, fontFamily: fonts.sans },
+  input: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: space(3),
+    color: colors.fg,
+    backgroundColor: colors.bg,
+    fontSize: 15,
+    fontFamily: fonts.sans,
+  },
+  profileHelp: { color: colors.fgMuted, fontSize: 12, lineHeight: 17, fontFamily: fonts.sans },
   signOutRow: { alignItems: 'center', paddingVertical: 15 },
   signOutText: { color: colors.negative, fontSize: 16, fontWeight: '600', fontFamily: fonts.sans },
   deleteRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space(2), paddingVertical: 15 },

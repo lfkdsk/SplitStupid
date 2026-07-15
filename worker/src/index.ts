@@ -63,7 +63,7 @@ function pickAllowedOrigin(origin: string | null, env: Env): string {
 function corsHeaders(origin: string): HeadersInit {
   return {
     'access-control-allow-origin': origin,
-    'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+    'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     'access-control-allow-headers': 'authorization, content-type',
     'access-control-max-age': '86400',
     'vary': 'origin',
@@ -123,6 +123,7 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
 
   if (path === '/me') {
     if (method === 'GET') return json(mePayload(auth, isAdmin(auth, env)))
+    if (method === 'PATCH') return await updateAccountProfile(env, auth, await request.json())
     if (method === 'DELETE') return await deleteAccount(env, me)
     return new Response('method not allowed', { status: 405 })
   }
@@ -474,7 +475,7 @@ async function upsertAccount(env: Env, account: AuthAccount): Promise<void> {
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
      ON CONFLICT(account_key) DO UPDATE SET
        email = COALESCE(excluded.email, accounts.email),
-       display_name = excluded.display_name,
+       display_name = accounts.display_name,
        avatar_url = COALESCE(excluded.avatar_url, accounts.avatar_url),
        primary_provider = COALESCE(excluded.primary_provider, accounts.primary_provider),
        provider_login = COALESCE(excluded.provider_login, accounts.provider_login),
@@ -683,6 +684,16 @@ async function fetchAppleJwk(kid: string): Promise<Record<string, unknown> | Res
 async function mergeAccountKeys(env: Env, fromKey: string, toKey: string): Promise<void> {
   if (fromKey === toKey) return
 
+  // The source account is the one the person has already been using. Carry
+  // its display name into the canonical destination before provider sign-in
+  // data is merged, so a user-edited name survives Apple/GitHub linking.
+  await env.DB.prepare(
+    `UPDATE accounts
+     SET display_name = (SELECT display_name FROM accounts WHERE account_key = ?),
+         updated_at = ?
+     WHERE account_key = ?`,
+  ).bind(fromKey, Date.now(), toKey).run()
+
   const memberRows = await env.DB.prepare(
     `SELECT group_id, joined_at FROM members WHERE login = ?`,
   ).bind(fromKey).all<{ group_id: string; joined_at: number }>()
@@ -764,6 +775,21 @@ function parseStoredEventForDeletion(row: StoredEventRow): ParsedStoredEventRow 
   } catch {
     return null
   }
+}
+
+// PATCH /me — update only SplitStupid's canonical display name. Provider
+// identity rows retain the original Apple/GitHub profile data, while group
+// reads immediately pick up this account-level value through profilesFor().
+async function updateAccountProfile(env: Env, account: AuthAccount, body: any): Promise<Response> {
+  const displayName = stringField(body?.displayName, 'displayName', 1, 80)
+  if (typeof displayName !== 'string') return displayName
+
+  await env.DB.prepare(
+    `UPDATE accounts SET display_name = ?, updated_at = ? WHERE account_key = ?`,
+  ).bind(displayName, Date.now(), account.accountKey).run()
+
+  const updated = { ...account, displayName }
+  return json(mePayload(updated, isAdmin(updated, env)))
 }
 
 // DELETE /me — permanently removes the authenticated account and the data it
@@ -1597,7 +1623,6 @@ function isAdmin(me: AuthAccount, env: Env): boolean {
     me.accountKey,
     me.email,
     me.providerLogin,
-    me.displayName,
   ].filter(Boolean).some(v => admins.includes(String(v).toLowerCase()))
 }
 
