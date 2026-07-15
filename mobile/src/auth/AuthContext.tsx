@@ -127,9 +127,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
-    await deleteStoredToken()
-    setApiToken(null)
-    setMe(null)
+    try {
+      await deleteStoredToken()
+    } finally {
+      // Always clear in-memory auth. This matters after account deletion: the
+      // server account is already gone even if Keychain cleanup fails.
+      setApiToken(null)
+      setMe(null)
+    }
   }
 
   return (

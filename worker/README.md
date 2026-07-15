@@ -41,6 +41,7 @@ participate in Apple email merging until the user signs in through
 | POST   | `/auth/github`             | `{token}`                          | Exchanges a GitHub OAuth token. Requires verified primary email. |
 | POST   | `/auth/apple`              | `{identityToken, fullName?}`       | Verifies the Apple identity token and returns an app session. |
 | GET    | `/me`                      |                                    | Current account profile and admin flag.          |
+| DELETE | `/me`                      |                                    | Permanently deletes the account, owned groups, authored events, and anonymizes surviving references. |
 | GET    | `/groups`                  |                                    | Owned ∪ joined for the auth'd user.              |
 | POST   | `/groups`                  | `{name, currency}`                 | Creator becomes owner + sole member.             |
 | GET    | `/friends`                 |                                    | Logins you've shared ≥1 group with.              |

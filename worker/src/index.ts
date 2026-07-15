@@ -123,6 +123,7 @@ async function route(request: Request, env: Env, _ctx: ExecutionContext): Promis
 
   if (path === '/me') {
     if (method === 'GET') return json(mePayload(auth, isAdmin(auth, env)))
+    if (method === 'DELETE') return await deleteAccount(env, me)
     return new Response('method not allowed', { status: 405 })
   }
 
@@ -741,6 +742,131 @@ function replaceMemberInPayload(payload: any, fromKey: string, toKey: string): {
     }
   }
   return { payload: next, changed }
+}
+
+interface StoredEventRow {
+  id: string
+  group_id: string
+  type: string
+  payload: string
+  author_login: string
+}
+
+interface ParsedStoredEventRow extends Omit<StoredEventRow, 'payload'> {
+  payload: Record<string, unknown>
+}
+
+function parseStoredEventForDeletion(row: StoredEventRow): ParsedStoredEventRow | null {
+  try {
+    const payload = JSON.parse(row.payload)
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+    return { ...row, payload }
+  } catch {
+    return null
+  }
+}
+
+// DELETE /me — permanently removes the authenticated account and the data it
+// created. Owned groups disappear in full. In groups owned by someone else,
+// events authored by the account (plus void/edit rows that only amend those
+// events) are deleted; references in other people's events are rewritten to a
+// random group-scoped offline profile named "Deleted account" so the remaining
+// ledger can still be computed without retaining an account identifier.
+//
+// All relevant payloads are parsed before any write is issued. The writes then
+// run in one D1 batch, which prevents a malformed historical row or a failed
+// statement from leaving a half-deleted account.
+async function deleteAccount(env: Env, me: string): Promise<Response> {
+  const candidateRows = await env.DB.prepare(
+    `SELECT e.id, e.group_id, e.type, e.payload, e.author_login
+     FROM events e
+     JOIN groups g ON g.id = e.group_id
+     WHERE g.owner_login <> ?1
+       AND (e.author_login = ?1 OR e.payload LIKE ?2)`,
+  ).bind(me, `%${me}%`).all<StoredEventRow>()
+
+  const candidates: ParsedStoredEventRow[] = []
+  for (const row of candidateRows.results || []) {
+    const parsed = parseStoredEventForDeletion(row)
+    if (!parsed) return json({ error: 'account deletion blocked by invalid ledger data' }, 500)
+    candidates.push(parsed)
+  }
+
+  const authoredIds = new Set(candidates.filter(row => row.author_login === me).map(row => row.id))
+  const authoredGroupIds = Array.from(new Set(
+    candidates.filter(row => row.author_login === me).map(row => row.group_id),
+  ))
+
+  // A void/edit payload contains only targetId, not the target author's key,
+  // so it cannot be found by the account-key LIKE query above. Inspect all
+  // mutation rows in groups where the account authored an event and remove
+  // only those whose target is being deleted.
+  const dependentIds = new Set<string>()
+  for (let offset = 0; offset < authoredGroupIds.length; offset += 80) {
+    const groupIds = authoredGroupIds.slice(offset, offset + 80)
+    const placeholders = groupIds.map(() => '?').join(',')
+    const rows = await env.DB.prepare(
+      `SELECT id, group_id, type, payload, author_login
+       FROM events
+       WHERE group_id IN (${placeholders})
+         AND type IN ('void', 'edit')
+         AND author_login <> ?`,
+    ).bind(...groupIds, me).all<StoredEventRow>()
+
+    for (const row of rows.results || []) {
+      const parsed = parseStoredEventForDeletion(row)
+      if (!parsed) return json({ error: 'account deletion blocked by invalid ledger data' }, 500)
+      if (typeof parsed.payload.targetId === 'string' && authoredIds.has(parsed.payload.targetId)) {
+        dependentIds.add(parsed.id)
+      }
+    }
+  }
+
+  const placeholdersByGroup = new Map<string, string>()
+  const rewrittenPayloads: Array<{ id: string; payload: string }> = []
+  for (const row of candidates) {
+    if (row.author_login === me || dependentIds.has(row.id)) continue
+    let deletedMember = placeholdersByGroup.get(row.group_id)
+    if (!deletedMember) deletedMember = `guest:${row.group_id}:${randomId(12)}`
+    const next = replaceMemberInPayload(row.payload, me, deletedMember)
+    if (!next.changed) continue
+    placeholdersByGroup.set(row.group_id, deletedMember)
+    rewrittenPayloads.push({ id: row.id, payload: JSON.stringify(next.payload) })
+  }
+
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(`DELETE FROM groups WHERE owner_login = ?`).bind(me),
+    env.DB.prepare(`DELETE FROM events WHERE author_login = ?`).bind(me),
+  ]
+
+  const dependentIdList = Array.from(dependentIds)
+  for (let offset = 0; offset < dependentIdList.length; offset += 80) {
+    const ids = dependentIdList.slice(offset, offset + 80)
+    statements.push(env.DB.prepare(
+      `DELETE FROM events WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ).bind(...ids))
+  }
+
+  const now = Date.now()
+  for (const [groupId, memberKey] of placeholdersByGroup) {
+    statements.push(env.DB.prepare(
+      `INSERT INTO offline_members (member_key, group_id, display_name, created_by, created_at)
+       VALUES (?, ?, 'Deleted account', 'deleted', ?)`,
+    ).bind(memberKey, groupId, now))
+  }
+  for (const row of rewrittenPayloads) {
+    statements.push(env.DB.prepare(`UPDATE events SET payload = ? WHERE id = ?`).bind(row.payload, row.id))
+  }
+
+  statements.push(
+    env.DB.prepare(`DELETE FROM members WHERE login = ?`).bind(me),
+    env.DB.prepare(`UPDATE offline_members SET created_by = 'deleted' WHERE created_by = ?`).bind(me),
+    env.DB.prepare(`DELETE FROM identities WHERE account_key = ?`).bind(me),
+    env.DB.prepare(`DELETE FROM accounts WHERE account_key = ?`).bind(me),
+  )
+
+  await env.DB.batch(statements)
+  return new Response(null, { status: 204 })
 }
 
 // ---------------------------------------------------------------------------
