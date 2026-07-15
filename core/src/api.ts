@@ -68,6 +68,9 @@ export const authWithAppleIdentityToken = (input: {
 export const getMe = (): Promise<AuthMe> =>
   call<AuthMe>('/me')
 
+export const deleteAccount = (): Promise<void> =>
+  call<void>('/me', { method: 'DELETE' })
+
 // ---------------------------------------------------------------------------
 // Groups
 

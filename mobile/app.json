@@ -15,7 +15,7 @@
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "bundleIdentifier": "org.lfkdsk.splitstupid",
-      "buildNumber": "5",
+      "buildNumber": "6",
       "associatedDomains": [
         "applinks:splitstupid.lfkdsk.org"
       ],
@@ -50,7 +50,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow SplitStupid to scan invite QR codes."
+          "cameraPermission": "SplitStupid uses the camera only to scan invite QR codes."
         }
       ],
       "@react-native-community/datetimepicker"

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { StyleSheet, Text, View } from 'react-native'
+import { Linking, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { CameraView, type BarcodeScanningResult, useCameraPermissions } from 'expo-camera'
 import { StackActions, type NavigationProp, useFocusEffect } from '@react-navigation/native'
@@ -48,14 +48,23 @@ export default function ScanInviteScreen({ navigation }: { navigation: Navigatio
   }
 
   if (!permission.granted) {
+    const permanentlyDenied = !permission.canAskAgain
     return (
       <SafeAreaView style={styles.root}>
         <View style={styles.center}>
           <Text style={styles.title}>Scan invite QR</Text>
           <Text style={styles.copy}>
-            Camera access is needed to scan the QR code shown by Share to invite.
+            {permanentlyDenied
+              ? 'Camera access is off. Enable it in Settings to scan invite QR codes.'
+              : 'Camera access is needed to scan the QR code shown by Share to invite.'}
           </Text>
-          <Button title="Allow camera" onPress={requestPermission} style={{ width: '100%' }} />
+          <Button
+            title={permanentlyDenied ? 'Open Settings' : 'Continue'}
+            onPress={permanentlyDenied
+              ? () => { void Linking.openSettings() }
+              : requestPermission}
+            style={{ width: '100%' }}
+          />
         </View>
       </SafeAreaView>
     )
