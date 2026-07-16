@@ -15,7 +15,7 @@
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "bundleIdentifier": "org.lfkdsk.splitstupid",
-      "buildNumber": "7",
+      "buildNumber": "8",
       "associatedDomains": [
         "applinks:splitstupid.lfkdsk.org"
       ],
