@@ -13,6 +13,7 @@ import { colors, fonts, radius, space } from '../theme'
 export default function SettingsScreen() {
   const { me, signOut, updateDisplayName } = useAuth()
   const [displayName, setDisplayName] = useState(me?.displayName ?? '')
+  const [editingName, setEditingName] = useState(false)
   const [savingName, setSavingName] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -27,6 +28,18 @@ export default function SettingsScreen() {
     && normalizedDisplayName !== me?.displayName
     && !savingName
 
+  function openNameEditor() {
+    setDisplayName(me?.displayName ?? '')
+    setProfileError(null)
+    setEditingName(true)
+  }
+
+  function closeNameEditor() {
+    setDisplayName(me?.displayName ?? '')
+    setProfileError(null)
+    setEditingName(false)
+  }
+
   async function saveDisplayName() {
     if (!canSaveName) return
     setSavingName(true)
@@ -34,8 +47,9 @@ export default function SettingsScreen() {
     try {
       await updateDisplayName(normalizedDisplayName)
       setDisplayName(normalizedDisplayName)
+      setEditingName(false)
     } catch (e) {
-      setProfileError((e as Error)?.message || 'Failed to update display name')
+      setProfileError((e as Error)?.message || 'Failed to update name')
     } finally {
       setSavingName(false)
     }
@@ -76,34 +90,59 @@ export default function SettingsScreen() {
         <View style={styles.accountRow}>
           {me ? <Avatar login={me.login} size={44} /> : null}
           <View style={{ flex: 1 }}>
-            <Text style={styles.login} numberOfLines={1}>{me?.displayName}</Text>
+            <Pressable
+              onPress={openNameEditor}
+              disabled={!me || editingName}
+              hitSlop={8}
+              style={({ pressed }) => [styles.nameTrigger, pressed && !editingName && styles.nameTriggerPressed]}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit name${me?.displayName ? `, ${me.displayName}` : ''}`}
+              accessibilityState={{ disabled: !me || editingName }}
+            >
+              <Text style={styles.login} numberOfLines={1}>{me?.displayName}</Text>
+              {!editingName ? <Text style={styles.editNameHint}>Edit</Text> : null}
+            </Pressable>
             <Text style={styles.muted} numberOfLines={1}>Account ID · {me?.login}</Text>
           </View>
         </View>
-        <View style={styles.profileForm}>
-          <Text style={styles.fieldLabel}>Display name</Text>
-          <TextInput
-            value={displayName}
-            onChangeText={setDisplayName}
-            placeholder="Your name"
-            placeholderTextColor={colors.fgSubtle}
-            maxLength={80}
-            autoCapitalize="words"
-            autoCorrect={false}
-            textContentType="name"
-            returnKeyType="done"
-            onSubmitEditing={() => { void saveDisplayName() }}
-            style={styles.input}
-          />
-          <Text style={styles.profileHelp}>Shown to other members in groups, expenses, and invites.</Text>
-          {profileError ? <ErrorBanner message={profileError} onDismiss={() => setProfileError(null)} /> : null}
-          <Button
-            title="Save name"
-            onPress={() => { void saveDisplayName() }}
-            loading={savingName}
-            disabled={!canSaveName}
-          />
-        </View>
+        {editingName ? (
+          <View style={styles.profileForm}>
+            <Text style={styles.fieldLabel}>Name</Text>
+            <TextInput
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder="Your name"
+              placeholderTextColor={colors.fgSubtle}
+              maxLength={80}
+              autoCapitalize="words"
+              autoCorrect={false}
+              autoFocus
+              selectTextOnFocus
+              textContentType="name"
+              returnKeyType="done"
+              onSubmitEditing={() => { void saveDisplayName() }}
+              style={styles.input}
+            />
+            <Text style={styles.profileHelp}>Shown to other members in groups, expenses, and invites.</Text>
+            {profileError ? <ErrorBanner message={profileError} onDismiss={() => setProfileError(null)} /> : null}
+            <View style={styles.profileActions}>
+              <Button
+                title="Cancel"
+                variant="ghost"
+                onPress={closeNameEditor}
+                disabled={savingName}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title="Save"
+                onPress={() => { void saveDisplayName() }}
+                loading={savingName}
+                disabled={!canSaveName}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {/* Future settings sections land here — default currency, theme,
@@ -158,9 +197,27 @@ const styles = StyleSheet.create({
   },
   accountRow: { flexDirection: 'row', alignItems: 'center', gap: space(3), padding: space(4) },
   muted: { fontSize: 12, color: colors.fgMuted, fontFamily: fonts.sans },
-  login: { fontSize: 18, fontWeight: '600', color: colors.fg, fontFamily: fonts.display, marginBottom: 2 },
-  profileForm: { borderTopWidth: 1, borderTopColor: colors.border, padding: space(4), gap: space(2) },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: colors.fg, fontFamily: fonts.sans },
+  nameTrigger: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(2),
+    borderRadius: radius.sm,
+    marginBottom: 2,
+  },
+  nameTriggerPressed: { opacity: 0.6 },
+  login: { flexShrink: 1, fontSize: 18, fontWeight: '600', color: colors.fg, fontFamily: fonts.display },
+  editNameHint: { fontSize: 12, fontWeight: '600', color: colors.accent, fontFamily: fonts.sans },
+  profileForm: {
+    marginHorizontal: space(3),
+    marginBottom: space(3),
+    padding: space(3),
+    gap: space(2),
+    borderRadius: radius.md,
+    backgroundColor: colors.bgSubtle,
+  },
+  fieldLabel: { fontSize: 12, fontWeight: '600', color: colors.fgMuted, fontFamily: fonts.sans },
   input: {
     height: 44,
     borderWidth: 1,
@@ -173,6 +230,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
   },
   profileHelp: { color: colors.fgMuted, fontSize: 12, lineHeight: 17, fontFamily: fonts.sans },
+  profileActions: { flexDirection: 'row', gap: space(2), marginTop: space(1) },
   signOutRow: { alignItems: 'center', paddingVertical: 15 },
   signOutText: { color: colors.negative, fontSize: 16, fontWeight: '600', fontFamily: fonts.sans },
   deleteRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space(2), paddingVertical: 15 },
