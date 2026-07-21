@@ -4,6 +4,14 @@
 
 import type { Balance, EditEvent, Event, ExpenseEvent, Member, Transfer } from './types'
 
+export const CURRENCIES = ['USD', 'EUR', 'JPY', 'CNY', 'GBP', 'HKD', 'TWD', 'KRW', 'SGD', 'AUD', 'CAD'] as const
+
+const zeroDecimal = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
+
+export function normalizeCurrency(currency: string): string {
+  return currency.trim().toUpperCase()
+}
+
 // Walk the event log and return per-member running balance. Members
 // missing from the events list still appear (with zero) so the UI can
 // render the full roster — including people who joined via QR scan
@@ -68,6 +76,14 @@ export function effectiveExpenses(events: Event[]): ExpenseEvent[] {
 export function applyEdit(e: ExpenseEvent, edit: EditEvent): ExpenseEvent {
   const next: ExpenseEvent = { ...e, amount: edit.amount, ts: new Date(edit.date).toISOString() }
   if (edit.note !== undefined) next.note = edit.note || undefined
+  if (edit.originalCurrency !== undefined) {
+    next.originalCurrency = edit.originalCurrency
+    next.originalAmount = edit.originalAmount
+    next.exchangeRate = edit.exchangeRate
+    next.exchangeRateSource = edit.exchangeRateSource
+    next.exchangeRateDate = edit.exchangeRateDate
+    next.exchangeRateFetchedAt = edit.exchangeRateFetchedAt
+  }
   return next
 }
 
@@ -177,7 +193,6 @@ export function realCostByMember(expenses: ExpenseEvent[]): Map<Member, number> 
 export function formatAmount(minor: number, currency: string): string {
   // Most currencies use 2 decimals; JPY/KRW/etc. use 0. Hard-code the
   // zero-decimal set since v1 doesn't need a full ISO 4217 table.
-  const zeroDecimal = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
   if (zeroDecimal.has(currency.toUpperCase())) {
     return `${minor.toLocaleString()} ${currency}`
   }
@@ -186,7 +201,6 @@ export function formatAmount(minor: number, currency: string): string {
 }
 
 export function parseAmount(input: string, currency: string): number {
-  const zeroDecimal = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
   const n = Number(input.trim().replace(/,/g, ''))
   if (!Number.isFinite(n)) return NaN
   if (zeroDecimal.has(currency.toUpperCase())) return Math.round(n)
@@ -197,7 +211,30 @@ export function parseAmount(input: string, currency: string): number {
 // human-typed major form for pre-filling an edit field. Mirrors the
 // zero-decimal currency set above.
 export function amountToInput(minor: number, currency: string): string {
-  const zeroDecimal = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR'])
   if (zeroDecimal.has(currency.toUpperCase())) return String(minor)
   return (minor / 100).toFixed(2)
+}
+
+export function convertMinorAmount(
+  originalMinor: number,
+  originalCurrency: string,
+  targetCurrency: string,
+  rate: number,
+): number {
+  if (!Number.isFinite(originalMinor) || !Number.isInteger(originalMinor)) return NaN
+  if (!Number.isFinite(rate) || rate <= 0) return NaN
+  const original = normalizeCurrency(originalCurrency)
+  const target = normalizeCurrency(targetCurrency)
+  if (original === target) return originalMinor
+  const originalMajor = zeroDecimal.has(original) ? originalMinor : originalMinor / 100
+  const targetMajor = originalMajor * rate
+  return zeroDecimal.has(target) ? Math.round(targetMajor) : Math.round(targetMajor * 100)
+}
+
+export function expenseOriginalCurrency(e: ExpenseEvent, fallbackCurrency: string): string {
+  return normalizeCurrency(e.originalCurrency || fallbackCurrency)
+}
+
+export function expenseOriginalAmount(e: ExpenseEvent): number {
+  return e.originalAmount ?? e.amount
 }

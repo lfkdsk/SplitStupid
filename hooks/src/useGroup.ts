@@ -17,6 +17,7 @@ import {
   listFriends,
   finalizeGroup,
   reopenGroup,
+  fetchExchangeRate,
   postEvent,
   makeExpense,
   makeVoid,
@@ -28,6 +29,8 @@ import {
   lastSettleTs,
   latestEditByTarget,
   parseAmount,
+  convertMinorAmount,
+  normalizeCurrency,
   type Group,
   type Balance,
   type Transfer,
@@ -40,6 +43,79 @@ import {
 // both platforms (a phone scanner opens it in a browser).
 const SHARE_ORIGIN = 'https://splitstupid.lfkdsk.org'
 
+interface MoneyInput {
+  amountStr: string
+  currency?: string
+  manualExchangeRate?: number
+}
+
+async function resolveMoneyInput(input: MoneyInput, groupCurrency: string, dateMs?: number): Promise<{
+  amount: number
+  fx: {
+    originalCurrency: string
+    originalAmount: number
+    exchangeRate: number
+    exchangeRateSource: 'frankfurter' | 'manual'
+    exchangeRateDate: string
+    exchangeRateFetchedAt?: number
+  }
+} | null> {
+  const originalCurrency = normalizeCurrency(input.currency || groupCurrency)
+  const quote = normalizeCurrency(groupCurrency)
+  const originalAmount = parseAmount(input.amountStr, originalCurrency)
+  if (!Number.isFinite(originalAmount) || originalAmount <= 0) return null
+  const rateDate = rateDateFromMs(dateMs)
+
+  if (originalCurrency === quote) {
+    return {
+      amount: originalAmount,
+      fx: {
+        originalCurrency,
+        originalAmount,
+        exchangeRate: 1,
+        exchangeRateSource: 'manual',
+        exchangeRateDate: rateDate,
+      },
+    }
+  }
+
+  if (input.manualExchangeRate !== undefined) {
+    const exchangeRate = input.manualExchangeRate
+    const amount = convertMinorAmount(originalAmount, originalCurrency, quote, exchangeRate)
+    if (!Number.isFinite(amount) || amount <= 0) return null
+    return {
+      amount,
+      fx: {
+        originalCurrency,
+        originalAmount,
+        exchangeRate,
+        exchangeRateSource: 'manual',
+        exchangeRateDate: rateDate,
+      },
+    }
+  }
+
+  const quoteRate = await fetchExchangeRate({ base: originalCurrency, quote, date: rateDate })
+  const amount = convertMinorAmount(originalAmount, originalCurrency, quote, quoteRate.rate)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  return {
+    amount,
+    fx: {
+      originalCurrency,
+      originalAmount,
+      exchangeRate: quoteRate.rate,
+      exchangeRateSource: 'frankfurter',
+      exchangeRateDate: quoteRate.date,
+      exchangeRateFetchedAt: quoteRate.fetchedAt,
+    },
+  }
+}
+
+function rateDateFromMs(ms?: number): string {
+  const d = Number.isFinite(ms) ? new Date(ms!) : new Date()
+  return d.toISOString().slice(0, 10)
+}
+
 /** Per-expense view model: the effective (edit-folded) figures plus the
  *  permission flags that decide whether the void / edit affordances show. */
 export interface ExpenseView {
@@ -47,6 +123,12 @@ export interface ExpenseView {
   effDateMs: number
   /** Effective note after folding the latest edit (undefined ⇒ no note). */
   effNote?: string
+  effOriginalCurrency?: string
+  effOriginalAmount?: number
+  effExchangeRate?: number
+  effExchangeRateSource?: 'frankfurter' | 'manual'
+  effExchangeRateDate?: string
+  effExchangeRateFetchedAt?: number
   isVoided: boolean
   edited: boolean
   /** Sits before the latest settle checkpoint — frozen as a paid-off record,
@@ -58,12 +140,22 @@ export interface ExpenseView {
 
 export interface AddExpenseInput {
   amountStr: string
+  currency?: string
+  manualExchangeRate?: number
   note: string
   /** Defaults to the authenticated user. Owners may pass an offline member. */
   payer?: Member
   participants: Member[]
   /** Unix ms to backdate to; omit for "now". */
   dateMs?: number
+}
+
+export interface EditExpenseInput {
+  amountStr: string
+  currency?: string
+  manualExchangeRate?: number
+  dateMs: number
+  note?: string
 }
 
 export interface UseGroup {
@@ -101,7 +193,7 @@ export interface UseGroup {
   join: () => Promise<void>
   addExpense: (input: AddExpenseInput) => Promise<boolean>
   voidExpense: (targetId: string) => Promise<void>
-  saveEdit: (targetId: string, input: { amountStr: string; dateMs: number; note?: string }) => Promise<boolean>
+  saveEdit: (targetId: string, input: EditExpenseInput) => Promise<boolean>
   /** Stamp a clear-the-slate checkpoint: the current balances are settled up,
    *  the period resets, the group stays open. Any member may call it. */
   settleUp: (note?: string) => Promise<void>
@@ -214,6 +306,12 @@ export function useGroup(groupId: string, me: Member): UseGroup {
         // Mirror applyEdit's note fold: an edit carrying a note wins (empty ⇒
         // cleared); a legacy edit without one leaves the original note.
         effNote: edit && edit.note !== undefined ? edit.note || undefined : e.note,
+        effOriginalCurrency: edit?.originalCurrency ?? e.originalCurrency,
+        effOriginalAmount: edit?.originalAmount ?? e.originalAmount,
+        effExchangeRate: edit?.exchangeRate ?? e.exchangeRate,
+        effExchangeRateSource: edit?.exchangeRateSource ?? e.exchangeRateSource,
+        effExchangeRateDate: edit?.exchangeRateDate ?? e.exchangeRateDate,
+        effExchangeRateFetchedAt: edit?.exchangeRateFetchedAt ?? e.exchangeRateFetchedAt,
         isVoided,
         edited: !!edit,
         isSettled,
@@ -284,17 +382,23 @@ export function useGroup(groupId: string, me: Member): UseGroup {
   const addExpense = useCallback(
     async (input: AddExpenseInput): Promise<boolean> => {
       if (!group) return false
-      const amount = parseAmount(input.amountStr, group.currency)
-      if (!Number.isFinite(amount) || amount <= 0) {
-        setError('Amount must be a positive number')
+      if (input.dateMs !== undefined && !Number.isFinite(input.dateMs)) {
+        setError('Pick a valid date')
+        return false
+      }
+      let converted: Awaited<ReturnType<typeof resolveMoneyInput>>
+      try {
+        converted = await resolveMoneyInput(input, group.currency, input.dateMs)
+      } catch (e) {
+        setError((e as Error)?.message || 'Failed to fetch exchange rate')
+        return false
+      }
+      if (!converted) {
+        setError('Amount and exchange rate must be positive numbers')
         return false
       }
       if (input.participants.length === 0) {
         setError('Pick at least one participant')
-        return false
-      }
-      if (input.dateMs !== undefined && !Number.isFinite(input.dateMs)) {
-        setError('Pick a valid date')
         return false
       }
       let ok = false
@@ -303,11 +407,12 @@ export function useGroup(groupId: string, me: Member): UseGroup {
           group.id,
           makeExpense({
             payer: input.payer || me,
-            amount,
+            amount: converted.amount,
             participants: input.participants,
             split: 'equal',
             note: input.note.trim() || undefined,
             ts: input.dateMs,
+            ...converted.fx,
           }),
         )
         await refresh()
@@ -319,15 +424,21 @@ export function useGroup(groupId: string, me: Member): UseGroup {
   )
 
   const saveEdit = useCallback(
-    async (targetId: string, input: { amountStr: string; dateMs: number; note?: string }): Promise<boolean> => {
+    async (targetId: string, input: EditExpenseInput): Promise<boolean> => {
       if (!group) return false
-      const amount = parseAmount(input.amountStr, group.currency)
-      if (!Number.isFinite(amount) || amount <= 0) {
-        setError('Amount must be a positive number')
-        return false
-      }
       if (!Number.isFinite(input.dateMs)) {
         setError('Pick a valid date')
+        return false
+      }
+      let converted: Awaited<ReturnType<typeof resolveMoneyInput>>
+      try {
+        converted = await resolveMoneyInput(input, group.currency, input.dateMs)
+      } catch (e) {
+        setError((e as Error)?.message || 'Failed to fetch exchange rate')
+        return false
+      }
+      if (!converted) {
+        setError('Amount and exchange rate must be positive numbers')
         return false
       }
       let ok = false
@@ -336,9 +447,10 @@ export function useGroup(groupId: string, me: Member): UseGroup {
         // clears the note, undefined leaves it as-is (see EditEvent.note).
         await postEvent(group.id, makeEdit({
           targetId,
-          amount,
+          amount: converted.amount,
           date: input.dateMs,
           note: input.note !== undefined ? input.note.trim() : undefined,
+          ...converted.fx,
         }))
         await refresh()
         ok = true
